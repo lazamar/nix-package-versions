@@ -4,6 +4,7 @@ import Control.Applicative ((<|>))
 import Data.Foldable (fold)
 import Data.List (intersperse)
 import Data.Monoid ((<>))
+import Data.Bifunctor (first)
 import System.Process (shell, readCreateProcess, CreateProcess(..))
 import Text.Parsec (ParseError, many, many1, sepBy, parse, oneOf, between)
 import Text.Parsec.Char (alphaNum, char, spaces, string, digit)
@@ -22,11 +23,13 @@ searchVersions path = do
 
         nixpkgsRepoPath = "/Users/marcelo/Projects/nixpkgs"
     out <- readCreateProcess ((shell command) { cwd = Just nixpkgsRepoPath }) ""
-    return $ either (error . show) id $ sequence $ fmap parsePackageVersion $ lines out
+    return $ either error id $ sequence $ fmap parsePackageVersion $ lines out
 
 
-parsePackageVersion :: String -> Either ParseError PackageVersion
-parsePackageVersion str = parse packageVersionParser "Package Version" str
+parsePackageVersion :: String -> Either String PackageVersion
+parsePackageVersion str =
+    first (\err -> "Error parsing: \"" <> str <> "\". " <> show err)
+    $ parse packageVersionParser "Package Version" str
 
 data PackageVersion = PackageVersion
     --  Name of package. e.g. nodejs
@@ -64,8 +67,14 @@ hash = Hash <$> many alphaNum
 newtype Version = Version String
     deriving (Show, Eq)
 
+-- | A package version number.
+-- May look like one of these:
+--      5
+--      5.0.0.2
+--      v13.5
+--      8.2.1-rc3
 version :: Parser Version
-version = Version <$> (many digit `separatedBy` '.')
+version = Version <$> aName
 
 inQuotes :: Parser a -> Parser a
 inQuotes = between (char '"') (char '"')
