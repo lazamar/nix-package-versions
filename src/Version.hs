@@ -16,8 +16,9 @@ searchVersions path = do
         command =
             "git rev-list master -- "
             <> path
-            <> " | xargs -I{} git grep -E '^\\s+version\\s?=\\s?\"[^\"]+\"\\s*;\\s*$' {} -- "
+            <> " | parallel -q git grep -E '^\\s+version\\s?=\\s?\"[^\"]+\"\\s*;\\s*$' {} -- "
             <> path
+            <> " || true"
 
         nixpkgsRepoPath = "/Users/marcelo/Projects/nixpkgs"
     out <- readCreateProcess ((shell command) { cwd = Just nixpkgsRepoPath }) ""
