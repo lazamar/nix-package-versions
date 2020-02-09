@@ -23,6 +23,7 @@ dependencies:
 - base >= 4.7 && < 5
 - process
 - parsec
+- unordered-containers >=0.2.10.0
 
 library:
   source-dirs: src
