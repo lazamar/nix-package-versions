@@ -2,7 +2,11 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DerivingStrategies #-}
 
-module PackageDB (generate, getInfo) where
+module PackageDB
+    ( generate
+    , getInfo
+    , packageCount
+    ) where
 
 {-|
     This module takes care of finding the path of a package in the
@@ -12,7 +16,6 @@ module PackageDB (generate, getInfo) where
 import Data.Aeson (FromJSON(..), ToJSON, eitherDecodeFileStrict, withObject, (.:), (.:?))
 import Data.Hashable (Hashable)
 import Data.HashMap.Strict (HashMap)
-import Data.HashMap.Strict as Map
 import Data.Maybe (fromMaybe)
 import Data.Text (Text, pack)
 import GHC.Generics (Generic)
@@ -20,7 +23,7 @@ import System.TimeIt (timeItNamed)
 import Version (filePath)
 import Text.Parsec (parse)
 
-import qualified Data.HashMap.Strict as H
+import qualified Data.HashMap.Strict as Map
 
 generate :: FilePath -> IO PackageDB
 generate filePath = do
@@ -30,7 +33,10 @@ generate filePath = do
     return $ either error createDB eitherDB
 
 getInfo :: Text -> PackageDB -> Maybe PackageInfo
-getInfo str = H.lookup str . unPackageDB
+getInfo str = Map.lookup str . unPackageDB
+
+packageCount :: PackageDB -> Int
+packageCount = Map.size . unPackageDB
 
 -- PackageDB
 

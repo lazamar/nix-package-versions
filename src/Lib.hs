@@ -22,4 +22,5 @@ someFunc = do
     --package <- getLine
     --version <- searchVersions package
     --sequence $ fmap (putStrLn . show) version
+    putStrLn $ "Number of packages loaded: " <> show (PackageDB.packageCount db)
     return ()

@@ -3,9 +3,10 @@ module Version (searchVersions, filePath) where
 import Control.Applicative ((<|>))
 import Data.Foldable (fold)
 import Data.List (intersperse)
+import Data.Maybe (mapMaybe)
 import Data.Monoid ((<>))
 import Data.Bifunctor (first)
-import Data.Text (Text, pack)
+import Data.Text (Text, pack, unpack)
 import System.Process (shell, readCreateProcess, CreateProcess(..))
 import Text.Parsec (ParseError, many, many1, sepBy, parse, oneOf, between)
 import Text.Parsec.Char (alphaNum, char, spaces, string, digit)
@@ -13,24 +14,59 @@ import Text.Parsec.String (Parser)
 
 searchVersions :: FilePath -> IO [PackageVersion]
 searchVersions path = do
-    let
-        command :: String
-        command =
+    let command =
             "git rev-list master -- "
             <> path
             <> " | parallel -q git grep -E '^\\s+version\\s?=\\s?\"[^\"]+\"\\s*;\\s*$' {} -- "
             <> path
             <> " || true"
 
+    out <- runInNixPkgs command
+    return $ either (error . show) id $ sequence $ fmap parsePackageVersion $ lines out
+
+searchVersions' :: FilePath -> IO [PackageVersion]
+searchVersions' path = do
+    commits <- pathCommits path
+    fold <$> traverse (versionMention path) commits
+
+
+pathCommits :: FilePath -> IO [Hash]
+pathCommits path = do
+    let command = "git rev-list master -- " <> path
+    out <- runInNixPkgs command
+    return
+        $ mapMaybe (either (const Nothing) Just)
+        $ fmap parseCommitHash
+        $ lines out
+
+versionMention :: FilePath -> Hash -> IO [PackageVersion]
+versionMention path (Hash hash) = do
+    let command = "git grep -E '^\\s+version\\s?=\\s?\"[^\"]+\"\\s*;\\s*$' "
+                <> hash
+                <> " -- "
+                <> path
+                <> " || true" -- Prevent the command from failing by not finding a match
+    out <- runInNixPkgs command
+    return
+        $ fromEitherList
+        $ fmap parsePackageVersion
+        $ lines out
+
+runInNixPkgs :: String -> IO String
+runInNixPkgs command =
+    readCreateProcess ((shell command) { cwd = Just nixpkgsRepoPath }) ""
+    where
         nixpkgsRepoPath = "/Users/marcelo/Projects/nixpkgs"
-    out <- readCreateProcess ((shell command) { cwd = Just nixpkgsRepoPath }) ""
-    return $ either error id $ sequence $ fmap parsePackageVersion $ lines out
 
+fromEitherList :: [Either b a] -> [a]
+fromEitherList = mapMaybe (either (const Nothing) Just)
 
-parsePackageVersion :: String -> Either String PackageVersion
-parsePackageVersion str =
-    first (\err -> "Error parsing: \"" <> str <> "\". " <> show err)
-    $ parse packageVersionParser "Package Version" str
+parsePackageVersion :: String -> Either ParseError PackageVersion
+parsePackageVersion = parse packageVersionParser "Package Version"
+
+parseCommitHash :: String -> Either ParseError Hash
+parseCommitHash = parse hash "Commit Hash"
+
 
 data PackageVersion = PackageVersion
     --  Name of package. e.g. nodejs
@@ -59,11 +95,11 @@ packageVersionParser = do
         , nixpkgsHash = h
         }
 
-newtype Hash = Hash Text
+newtype Hash = Hash String
     deriving (Show, Eq)
 
 hash :: Parser Hash
-hash = Hash . pack <$> many alphaNum
+hash = Hash <$> many alphaNum
 
 newtype Version = Version Text
     deriving (Show, Eq)
