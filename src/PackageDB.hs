@@ -14,8 +14,11 @@ import Data.Hashable (Hashable)
 import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict as Map
 import Data.Maybe (fromMaybe)
+import Data.Text (Text, pack)
 import GHC.Generics (Generic)
 import System.TimeIt (timeItNamed)
+import Version (filePath)
+import Text.Parsec (parse)
 
 import qualified Data.HashMap.Strict as H
 
@@ -26,7 +29,7 @@ generate filePath = do
     putStrLn "Package database generated."
     return $ either error createDB eitherDB
 
-getInfo :: String -> PackageDB -> Maybe PackageInfo
+getInfo :: Text -> PackageDB -> Maybe PackageInfo
 getInfo str = H.lookup str . unPackageDB
 
 -- PackageDB
@@ -64,11 +67,13 @@ createDB (NixPkgsJSON rawDB) = PackageDB db
               Nothing    -> paths
               Just aPath -> Map.insertWith (+) aPath 1 paths
 
+
+
 -----------------------------------------------------
 
 -- PackageName
 
-type PackageName = String
+type PackageName = Text
 
 -- NixPkgsJSON
 
@@ -90,5 +95,12 @@ instance Hashable RawPackageInfo
 instance ToJSON   RawPackageInfo
 instance FromJSON RawPackageInfo  where
     parseJSON = withObject "RawPackageInfo" $ \v ->
-        RawPackageInfo <$> (v .: "meta" >>= (.:? "position"))
+        RawPackageInfo . fmap removeLineNumber <$> (v .: "meta" >>= (.:? "position"))
 
+
+-- | take some/path:123 and return some/path
+removeLineNumber :: FilePath -> FilePath
+removeLineNumber rawPath =
+    case parse filePath "Remove line number" rawPath of
+        Left _  -> rawPath
+        Right f -> f

@@ -27,6 +27,7 @@ dependencies:
 - hashable
 - aeson
 - timeit
+- text
 
 library:
   source-dirs: src

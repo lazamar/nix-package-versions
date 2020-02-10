@@ -1,10 +1,11 @@
-module Version (searchVersions) where
+module Version (searchVersions, filePath) where
 
 import Control.Applicative ((<|>))
 import Data.Foldable (fold)
 import Data.List (intersperse)
 import Data.Monoid ((<>))
 import Data.Bifunctor (first)
+import Data.Text (Text, pack)
 import System.Process (shell, readCreateProcess, CreateProcess(..))
 import Text.Parsec (ParseError, many, many1, sepBy, parse, oneOf, between)
 import Text.Parsec.Char (alphaNum, char, spaces, string, digit)
@@ -58,13 +59,13 @@ packageVersionParser = do
         , nixpkgsHash = h
         }
 
-newtype Hash = Hash String
+newtype Hash = Hash Text
     deriving (Show, Eq)
 
 hash :: Parser Hash
-hash = Hash <$> many alphaNum
+hash = Hash . pack <$> many alphaNum
 
-newtype Version = Version String
+newtype Version = Version Text
     deriving (Show, Eq)
 
 -- | A package version number.
@@ -74,7 +75,7 @@ newtype Version = Version String
 --      v13.5
 --      8.2.1-rc3
 version :: Parser Version
-version = Version <$> aName
+version = Version . pack <$> aName
 
 inQuotes :: Parser a -> Parser a
 inQuotes = between (char '"') (char '"')
@@ -85,8 +86,6 @@ filePath = aName `separatedBy` '/'
 separatedBy :: Parser String -> Char -> Parser String
 separatedBy p separator =
     fold . intersperse [separator] <$> p `sepBy` char separator
-
-
 
 -- | A valid directory/file name
 aName :: Parser String
