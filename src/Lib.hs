@@ -12,13 +12,8 @@ someFunc = do
     db <- PackageDB.generate "./unstable.json"
 
     let getPkg = do
-            putStrLn "Type a package name to find its nixpkgs path: "
-            pname <- getLine
-            print $ PackageDB.getInfo pname db
-            putStrLn "Continue? (y/n)"
-            v <- getLine
-            unless ("n" == v) getPkg
-
+            print $ PackageDB.getInfo "ghc" db
+            print $ PackageDB.getInfo "haskellPackages.hoogle" db
     getPkg
 
     --putStrLn "Type a package to find its versions: "
