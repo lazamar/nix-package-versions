@@ -2,7 +2,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module PackageDB
-    ( generate
+    ( PackageInfo(..)
+    , generate
     , getInfo
     , packageCount
     , packageNames
@@ -27,7 +28,7 @@ import Text.Parsec (parse)
 
 import qualified Data.HashMap.Strict as Map
 
-generate :: FilePath -> IO PackageDB
+generate :: FilePath -> IO (PackageDB, HashMap FilePath Int)
 generate filePath = do
     putStrLn "Generating package database ..."
     eitherDB <- timeItNamed "Decoding file" $ eitherDecodeFileStrict filePath
@@ -64,8 +65,8 @@ data PackageInfo = PackageInfo
     , pinfo_pathCount :: Int
     } deriving (Show)
 
-createDB :: NixPkgsJSON -> PackageDB
-createDB (NixPkgsJSON rawDB) = PackageDB db
+createDB :: NixPkgsJSON -> (PackageDB, HashMap FilePath Int)
+createDB (NixPkgsJSON rawDB) = (PackageDB db, pathsDb)
     where
         db = Map.mapWithKey (packageInfo pathsDb) rawDB
 

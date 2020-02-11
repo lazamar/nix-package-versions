@@ -5,30 +5,43 @@ module Lib
     ) where
 
 import Control.Monad (unless)
-import Data.HashMap.Strict as H
+import Data.Maybe (mapMaybe)
 import qualified PackageDB
+import PackageDB (PackageInfo(..))
 import System.TimeIt (timeItNamed)
 import Data.Aeson (encode)
+import Data.List (sortBy)
+
 import qualified Data.ByteString.Lazy as BS
+import qualified Data.HashMap.Strict as H
 
 someFunc :: IO ()
 someFunc = do
-    db <- PackageDB.generate "./unstable.json"
+    (db, pathsDB) <- PackageDB.generate "./unstable.json"
 
     --let getPkg = do
             --print $ PackageDB.getInfo "ghc" db
             --print $ PackageDB.getInfo "haskellPackages.hoogle" db
 
-    versions <- timeItNamed "Traversals"
-                $ traverse (PackageDB.getVersions db) (take 5 $ PackageDB.packageNames db)
-    BS.writeFile "./output.json" (encode versions)
+    let names = PackageDB.packageNames db
+        infos = mapMaybe (PackageDB.getInfo db) names
+        inOneFile     = filter ((== 1) . pinfo_pathCount) infos
+        inMoreThanOne = filter ((> 1)  . pinfo_pathCount) infos
+        noFile        = filter ((== 0) . pinfo_pathCount) infos
 
-
+        ranking =
+            sortBy (\a b -> compare (snd b) (snd a))
+            $ H.toList
+            $ pathsDB
 
     --putStrLn "Type a package to find its versions: "
     --package <- getLine
     --version <- searchVersions package
     --sequence $ fmap (putStrLn . show) version
-    putStrLn $ "Number of packages loaded: " <> show (PackageDB.packageCount db)
-    putStrLn $ "Versions found: " <> show (length versions)
+    putStrLn $ "Total number of packages loaded: " <> show (length names)
+    putStrLn $ "Packages from files with one definition: " <> show (length inOneFile)
+    putStrLn $ "Packages from files with multiple definition: " <> show (length inMoreThanOne)
+    putStrLn $ "Packages without definition path: " <> show (length noFile)
+    putStrLn $ "Paths with most packages"
+    putStrLn $ unlines (fmap show $ take 30 ranking)
     return ()
