@@ -1,11 +1,12 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE DerivingStrategies #-}
 
 module PackageDB
     ( generate
     , getInfo
     , packageCount
+    , packageNames
+    , getVersions
     ) where
 
 {-|
@@ -13,6 +14,7 @@ module PackageDB
     nixpkgs repo
 -}
 
+import Control.Monad (guard)
 import Data.Aeson (FromJSON(..), ToJSON, eitherDecodeFileStrict, withObject, (.:), (.:?))
 import Data.Hashable (Hashable)
 import Data.HashMap.Strict (HashMap)
@@ -20,7 +22,7 @@ import Data.Maybe (fromMaybe)
 import Data.Text (Text, pack)
 import GHC.Generics (Generic)
 import System.TimeIt (timeItNamed)
-import Version (filePath)
+import Version (searchVersions, searchVersions', filePath, PackageVersion)
 import Text.Parsec (parse)
 
 import qualified Data.HashMap.Strict as Map
@@ -32,11 +34,21 @@ generate filePath = do
     putStrLn "Package database generated."
     return $ either error createDB eitherDB
 
-getInfo :: Text -> PackageDB -> Maybe PackageInfo
-getInfo str = Map.lookup str . unPackageDB
+getInfo :: PackageDB -> Text -> Maybe PackageInfo
+getInfo db str = Map.lookup str $ unPackageDB db
 
 packageCount :: PackageDB -> Int
 packageCount = Map.size . unPackageDB
+
+packageNames :: PackageDB -> [PackageName]
+packageNames = Map.keys . unPackageDB
+
+getVersions :: PackageDB -> PackageName -> IO [PackageVersion]
+getVersions db name = fromMaybe (return []) $ do
+    info <- getInfo db name
+    path <- pinfo_nixpath info
+    guard (pinfo_pathCount info == 1)
+    return $ searchVersions' path
 
 -- PackageDB
 
@@ -72,8 +84,6 @@ createDB (NixPkgsJSON rawDB) = PackageDB db
             case raw_nixpath rawInfo of
               Nothing    -> paths
               Just aPath -> Map.insertWith (+) aPath 1 paths
-
-
 
 -----------------------------------------------------
 

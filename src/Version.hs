@@ -1,16 +1,26 @@
-module Version (searchVersions, filePath) where
+{-# LANGUAGE DeriveGeneric #-}
+module Version
+    ( PackageVersion(..)
+    , searchVersions
+    , searchVersions'
+    , filePath
+    ) where
 
 import Control.Applicative ((<|>))
+import Data.Aeson (ToJSON, FromJSON)
 import Data.Foldable (fold)
 import Data.List (intersperse)
 import Data.Maybe (mapMaybe)
 import Data.Monoid ((<>))
 import Data.Bifunctor (first)
 import Data.Text (Text, pack, unpack)
+import GHC.Generics (Generic)
 import System.Process (shell, readCreateProcess, CreateProcess(..))
 import Text.Parsec (ParseError, many, many1, sepBy, parse, oneOf, between)
 import Text.Parsec.Char (alphaNum, char, spaces, string, digit)
 import Text.Parsec.String (Parser)
+import Control.Parallel.Strategies
+
 
 searchVersions :: FilePath -> IO [PackageVersion]
 searchVersions path = do
@@ -22,8 +32,10 @@ searchVersions path = do
             <> " || true"
 
     out <- runInNixPkgs command
-    return $ either (error . show) id $ sequence $ fmap parsePackageVersion $ lines out
+    return $ either (error . show) id $ mapM parsePackageVersion $ lines out
 
+-- | Like searchVersions, but the task is divided into
+-- separate calls to runInNixPkgs
 searchVersions' :: FilePath -> IO [PackageVersion]
 searchVersions' path = do
     commits <- pathCommits path
@@ -35,8 +47,7 @@ pathCommits path = do
     let command = "git rev-list master -- " <> path
     out <- runInNixPkgs command
     return
-        $ mapMaybe (either (const Nothing) Just)
-        $ fmap parseCommitHash
+        $ mapMaybe (either (const Nothing) Just .  parseCommitHash)
         $ lines out
 
 versionMention :: FilePath -> Hash -> IO [PackageVersion]
@@ -49,8 +60,7 @@ versionMention path (Hash hash) = do
     out <- runInNixPkgs command
     return
         $ fromEitherList
-        $ fmap parsePackageVersion
-        $ lines out
+        $ parsePackageVersion <$> lines out
 
 runInNixPkgs :: String -> IO String
 runInNixPkgs command =
@@ -78,7 +88,10 @@ data PackageVersion = PackageVersion
     , packagePath :: FilePath
     -- commit hash of nixpkgs with that version.
     , nixpkgsHash :: Hash
-    } deriving (Show, Eq)
+    } deriving (Show, Eq, Generic)
+
+instance ToJSON   PackageVersion
+instance FromJSON PackageVersion
 
 packageVersionParser :: Parser PackageVersion
 packageVersionParser = do
@@ -96,13 +109,19 @@ packageVersionParser = do
         }
 
 newtype Hash = Hash String
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
+
+instance ToJSON   Hash
+instance FromJSON Hash
 
 hash :: Parser Hash
 hash = Hash <$> many alphaNum
 
 newtype Version = Version Text
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
+
+instance ToJSON   Version
+instance FromJSON Version
 
 -- | A package version number.
 -- May look like one of these:

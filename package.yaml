@@ -28,6 +28,8 @@ dependencies:
 - aeson
 - timeit
 - text
+- bytestring
+- parallel
 
 library:
   source-dirs: src
