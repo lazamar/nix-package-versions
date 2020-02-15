@@ -8,9 +8,11 @@
 
 module Nix.Versions.Json
     ( fetch
+    , PackagesJSON(..)
+    , InfoJSON(..)
     ) where
 
-import Data.Aeson (FromJSON, eitherDecode)
+import Data.Aeson (FromJSON, eitherDecode, parseJSON, withObject, (.:), (.:?))
 import Data.HashMap.Strict (HashMap)
 import Nix.Versions.Types (Channel(..), Hash, Name, Version(..))
 import GHC.Generics (Generic)
@@ -18,7 +20,7 @@ import Network.HTTP.Req (defaultHttpConfig, lbsResponse, runReq, req, GET(..), (
                         , https, NoReqBody(..), responseBody)
 
 -- | Get JSON version information from nixos.org
-fetch :: Channel -> IO (PackagesJSON)
+fetch :: Channel -> IO PackagesJSON
 fetch channel = do
     response <- runReq defaultHttpConfig $ req GET (packageInfoUrl channel) NoReqBody lbsResponse mempty
     return $ either error id $ eitherDecode $  responseBody response
@@ -38,11 +40,16 @@ data PackagesJSON = PackagesJSON
 instance FromJSON PackagesJSON
 
 data InfoJSON = InfoJSON
-    { description :: String
+    { description :: Maybe String
     , version :: Version
-    , nixpkgsPath :: FilePath
-    } deriving (Generic)
+    , nixpkgsPath :: Maybe FilePath
+    } deriving (Show, Generic)
 
-instance FromJSON InfoJSON
+instance FromJSON InfoJSON where
+    parseJSON = withObject "InfoJSON" $ \v -> InfoJSON
+       <$> v .:? "description"
+       <*> v .:  "version"
+       <*> v .:? "location"
+
 
 

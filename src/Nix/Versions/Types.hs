@@ -5,10 +5,10 @@
 {-| This module defines the main types used to convey package version information
 -}
 module Nix.Versions.Types
-    ( Name
+    ( Name(..)
     , Version(..)
-    , Hash
-    , Package
+    , Hash(..)
+    , Package(..)
     , Channel(..)
     ) where
 
