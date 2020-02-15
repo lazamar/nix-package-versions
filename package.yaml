@@ -30,6 +30,7 @@ dependencies:
 - text
 - bytestring
 - parallel
+- req
 
 library:
   source-dirs: src

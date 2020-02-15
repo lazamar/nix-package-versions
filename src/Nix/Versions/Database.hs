@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module PackageDB
+module Nix.Versions.Database
     ( PackageInfo(..)
     , generate
     , getInfo
@@ -23,7 +23,7 @@ import Data.Maybe (fromMaybe)
 import Data.Text (Text, pack)
 import GHC.Generics (Generic)
 import System.TimeIt (timeItNamed)
-import Version (searchVersions, searchVersions', filePath, PackageVersion)
+import Nix.Versions (searchVersions, searchVersions', filePath, PackageVersion)
 import Text.Parsec (parse)
 
 import qualified Data.HashMap.Strict as Map

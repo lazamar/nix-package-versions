@@ -1,5 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
-module Version
+module Nix.Versions
     ( PackageVersion(..)
     , searchVersions
     , searchVersions'
