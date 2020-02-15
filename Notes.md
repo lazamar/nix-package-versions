@@ -1,5 +1,10 @@
 # Notes
 
+## Implementation notes:
+
+The commit route is not fruitful. Packages will point to different files for different versions.
+Also there are far too many packages definied in a multi-definition file
+
 ## Statistics about Nix
 
 Total number of packages loaded: 60895
