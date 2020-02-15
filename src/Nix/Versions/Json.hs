@@ -12,12 +12,15 @@ module Nix.Versions.Json
     , InfoJSON(..)
     ) where
 
-import Data.Aeson (FromJSON, eitherDecode, parseJSON, withObject, (.:), (.:?))
+import Data.Aeson (FromJSON, eitherDecode, parseJSON, withObject, (.:), (.:?), parseJSON)
 import Data.HashMap.Strict (HashMap)
+import Text.Parsec (parse)
 import Nix.Versions.Types (Channel(..), Hash, Name, Version(..))
 import GHC.Generics (Generic)
 import Network.HTTP.Req (defaultHttpConfig, lbsResponse, runReq, req, GET(..), (/:), Url, Scheme(..)
                         , https, NoReqBody(..), responseBody)
+
+import qualified Nix.Versions.Parsers as Parsers
 
 -- | Get JSON version information from nixos.org
 fetch :: Channel -> IO PackagesJSON
@@ -47,9 +50,16 @@ data InfoJSON = InfoJSON
 
 instance FromJSON InfoJSON where
     parseJSON = withObject "InfoJSON" $ \v -> InfoJSON
-       <$> v .:? "description"
-       <*> v .:  "version"
-       <*> v .:? "location"
+       <$> (v .: "meta" >>= (.:? "description"))
+       <*>  v .:  "version"
+       <*> (fmap removeLineNumber <$> (v .: "meta" >>= (.:? "position")))
+       where
+        -- | take some/path:123 and return some/path
+        removeLineNumber :: FilePath -> FilePath
+        removeLineNumber rawPath =
+            case parse Parsers.filePath "Remove line number" rawPath of
+                Left _  -> rawPath
+                Right f -> f
 
 
 

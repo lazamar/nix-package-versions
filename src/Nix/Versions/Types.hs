@@ -32,7 +32,7 @@ newtype Name = Name Text
 -- | A package version. e.g. v8.10-rc2
 newtype Version = Version Text
     deriving (Show, Eq, Generic)
-    deriving newtype (Monoid, Semigroup, FromJSON, FromJSONKey)
+    deriving newtype (Monoid, Semigroup, FromJSON, FromJSONKey, Hashable)
 
 -- | A commit hash
 newtype Hash = Hash Text
