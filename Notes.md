@@ -5,6 +5,13 @@
 The commit route is not fruitful. Packages will point to different files for different versions.
 Also there are far too many packages definied in a multi-definition file
 
+# List all packages of a derivation
+
+Get json list of all packages for a nix revision
+
+    $GIT_HASH=98d8e1a160d3138e9ef3a51f727b04315ab9e285
+    nix-env -qaP --json -f https://github.com/NixOS/nixpkgs/archive/$GIT_HASH.tar.gz --arg config 'import ./packages-config.nix'
+
 ## Statistics about Nix
 
 Total number of packages loaded: 60895

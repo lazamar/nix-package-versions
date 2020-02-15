@@ -12,27 +12,56 @@ module Nix.Versions.Json
     , InfoJSON(..)
     ) where
 
-import Data.Aeson (FromJSON, eitherDecode, parseJSON, withObject, (.:), (.:?), parseJSON)
+import Data.Aeson (ToJSON, FromJSON, eitherDecodeFileStrict, parseJSON, withObject, (.:), (.:?), parseJSON)
 import Data.HashMap.Strict (HashMap)
+import Data.Text (unpack)
 import Text.Parsec (parse)
-import Nix.Versions.Types (Channel(..), Hash, Name, Version(..))
+import Nix.Versions.Types (Channel(..), Hash(..), Name, Version(..))
 import GHC.Generics (Generic)
-import Network.HTTP.Req (defaultHttpConfig, lbsResponse, runReq, req, GET(..), (/:), Url, Scheme(..)
-                        , https, NoReqBody(..), responseBody)
+import System.Process (callCommand)
+
+import System.Posix.Temp (mkdtemp)
 
 import qualified Nix.Versions.Parsers as Parsers
 
 -- | Get JSON version information from nixos.org
-fetch :: Channel -> IO PackagesJSON
-fetch channel = do
-    response <- runReq defaultHttpConfig $ req GET (packageInfoUrl channel) NoReqBody lbsResponse mempty
-    return $ either error id $ eitherDecode $  responseBody response
+fetch :: Hash -> IO PackagesJSON
+fetch hash = do
+    -- Create temporary directory
+    let dirPrefix = "nix-package-versions"
+    tempDir <- mkdtemp dirPrefix
 
+    -- Get packages json info and save it in the temporary file
+    let tempFileAddress = tempDir <> "/nix-packages.json"
+    callCommand (command tempFileAddress)
 
-packageInfoUrl :: Channel -> Url Https
-packageInfoUrl (NixOS (Version version)) = https "nixos.org" /: "nixpkgs" /: "packages-nixos-" <> version <> ".json.gz"
-packageInfoUrl UnstableNixOS = https "nixos.org" /: "nixpkgs" /: "packages-nixos-unstable.json.gz"
-packageInfoUrl UnstableNixPkgs = https "nixos.org" /: "nixpkgs" /: "packages-nixpkgs-unstable.json.gz"
+    packagesMap <- either error id <$> eitherDecodeFileStrict tempFileAddress
+    return $ PackagesJSON hash packagesMap
+        where
+
+            command destination = "nix-env -qaP --json -f "
+                    <> revisionUrl hash
+                    <> " --arg config '" <> config <> "'"
+                    <> " >" <> destination
+
+            config = mconcat
+                [ "{"
+                   --Ensures no aliases are in the results.
+                , "  allowAliases = false;"
+                --  Enable recursion into attribute sets that nix-env normally doesn't look into
+                --  so that we can get a more complete picture of the available packages for the
+                --  purposes of the index.
+                , "  packageOverrides = super: {"
+                , "    haskellPackages = super.recurseIntoAttrs super.haskellPackages;"
+                , "    rPackages = super.recurseIntoAttrs super.rPackages;"
+                , "  };"
+                , "}"
+                ]
+
+type Url = String
+
+revisionUrl :: Hash -> Url
+revisionUrl (Hash hash) = "https://github.com/NixOS/nixpkgs/archive/" <> unpack hash <> ".tar.gz"
 
 -- | The contents of a json file with package information
 data PackagesJSON = PackagesJSON
@@ -41,6 +70,7 @@ data PackagesJSON = PackagesJSON
     } deriving (Generic)
 
 instance FromJSON PackagesJSON
+instance ToJSON PackagesJSON
 
 data InfoJSON = InfoJSON
     { description :: Maybe String
@@ -48,6 +78,7 @@ data InfoJSON = InfoJSON
     , nixpkgsPath :: Maybe FilePath
     } deriving (Show, Generic)
 
+instance ToJSON InfoJSON
 instance FromJSON InfoJSON where
     parseJSON = withObject "InfoJSON" $ \v -> InfoJSON
        <$> (v .: "meta" >>= (.:? "description"))

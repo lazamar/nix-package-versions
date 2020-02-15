@@ -12,7 +12,7 @@ module Nix.Versions.Types
     , Channel(..)
     ) where
 
-import Data.Aeson (FromJSON, FromJSONKey)
+import Data.Aeson (FromJSON, FromJSONKey, ToJSON, ToJSONKey)
 import Data.Hashable (Hashable)
 import Data.HashMap.Strict (HashMap)
 import Data.Text (Text)
@@ -27,16 +27,16 @@ data Channel
 --  | The name of package. e.g. nodejs
 newtype Name = Name Text
     deriving (Show, Eq, Generic)
-    deriving newtype (Hashable, FromJSON, FromJSONKey)
+    deriving newtype (Hashable, FromJSON, FromJSONKey, ToJSON, ToJSONKey)
 
 -- | A package version. e.g. v8.10-rc2
 newtype Version = Version Text
     deriving (Show, Eq, Generic)
-    deriving newtype (Monoid, Semigroup, FromJSON, FromJSONKey, Hashable)
+    deriving newtype (Monoid, Semigroup, FromJSON, FromJSONKey, ToJSON, Hashable)
 
 -- | A commit hash
 newtype Hash = Hash Text
-    deriving (Eq, Show, Generic, FromJSON)
+    deriving (Eq, Show, Generic, FromJSON, ToJSON)
 
 -- | A package with its version information
 data Package = Package
