@@ -10,7 +10,7 @@ module Nix.Versions.Json
     ( fetch
     ) where
 
-import Data.Aeson (FromJSON, decode)
+import Data.Aeson (FromJSON, eitherDecode)
 import Data.HashMap.Strict (HashMap)
 import Nix.Versions.Types (Channel(..), Hash, Name, Version(..))
 import GHC.Generics (Generic)
@@ -18,10 +18,10 @@ import Network.HTTP.Req (defaultHttpConfig, lbsResponse, runReq, req, GET(..), (
                         , https, NoReqBody(..), responseBody)
 
 -- | Get JSON version information from nixos.org
-fetch :: Channel -> IO (Maybe PackagesJSON)
+fetch :: Channel -> IO (PackagesJSON)
 fetch channel = do
     response <- runReq defaultHttpConfig $ req GET (packageInfoUrl channel) NoReqBody lbsResponse mempty
-    return $ decode $  responseBody response
+    return $ either error id $ eitherDecode $  responseBody response
 
 
 packageInfoUrl :: Channel -> Url Https
