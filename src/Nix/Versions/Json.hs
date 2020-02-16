@@ -76,10 +76,6 @@ downloadVersionsInPeriod from to = do
             result <- downloadFromNix (Commit hash date)
             return $ first (date,) result
 
-
-
-
-
 -- | Get JSON version information from nixos.org
 downloadFromNix :: Commit -> IO (Either String FilePath)
 downloadFromNix (Commit hash day) = do
@@ -120,6 +116,12 @@ downloadFromNix (Commit hash day) = do
             , "}"
             ]
 
+-------------------------------------------
+-- Loading packages
+
+load :: FilePath -> IO (Either String PackagesJSON)
+load path = eitherDecodeFileStrict path
+
 data FileType
     = RawNixVersions
     | Preprocessed
@@ -146,6 +148,7 @@ revisionUrl (Hash hash) = "https://github.com/NixOS/nixpkgs/archive/" <> unpack 
 -- | The contents of a json file with package information
 data PackagesJSON = PackagesJSON
     { commit :: Hash
+    , commitDate :: Day -- ^ commit date
     , packages :: HashMap Name InfoJSON
     } deriving (Generic)
 
@@ -153,7 +156,7 @@ instance FromJSON PackagesJSON
 instance ToJSON PackagesJSON
 
 data InfoJSON = InfoJSON
-    { description :: Maybe String
+    { description :: Maybe Text
     , version :: Version
     , nixpkgsPath :: Maybe FilePath
     } deriving (Show, Generic)
