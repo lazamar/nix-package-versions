@@ -34,6 +34,7 @@ dependencies:
 - unix
 - time
 - exceptions
+- async
 
 library:
   source-dirs: src

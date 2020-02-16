@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 
 {-| This module is responsible handles downloading and parsing the package
    versioning information available at https://nixos.org/nixos/packages
@@ -11,56 +11,91 @@ module Nix.Versions.Json
     ( downloadFromNix
     , nixpkgs
     , headAt
+    , downloadVersionsInPeriod
     , PackagesJSON(..)
     , InfoJSON(..)
     , Commit(..)
     ) where
 
 import Control.Exception (Exception(..), SomeException(..), throw)
-import Control.Monad (unless)
+import Control.Concurrent.Async (mapConcurrently)
+import Control.Monad (unless, (<=<))
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Aeson (ToJSON, FromJSON, eitherDecodeFileStrict, parseJSON, withObject, (.:), (.:?), parseJSON)
+import Data.Bifunctor (first)
+import Data.Either (isRight)
+import Data.Function ((&))
 import Data.HashMap.Strict (HashMap)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Text (pack, unpack, Text)
-import Data.Time.Calendar (Day)
+import Data.Time.Calendar (Day, fromGregorian, toGregorian, showGregorian)
+import Data.Foldable (asum)
 import Data.Typeable (Typeable, cast)
 import GHC.Generics (Generic)
 import Nix.Versions.Types (Channel(..), Hash(..), Name, Version(..))
-import System.Posix.Files (fileExist)
-import System.Process (callCommand, readCreateProcess, shell, CreateProcess(..))
+import System.Exit (ExitCode(..))
+import System.Posix.Files (fileExist, removeLink)
+import System.Process (readCreateProcessWithExitCode, shell, CreateProcess(..))
 import Text.Parsec (parse, spaces)
 import Text.Read (readMaybe)
 
 import qualified Nix.Versions.Parsers as Parsers
 
-data FileType
-    = RawNixVersions
-    | Preprocessed
 
-nixpkgs :: Repo
-nixpkgs = Repo "../nixpkgs"
+-- | Download lists of packages and their versions
+-- for commits between from date and to date.
+-- Downloads one package list for each month in period.
+downloadVersionsInPeriod :: Day -> Day -> IO [Either (Day, String) FilePath]
+downloadVersionsInPeriod from to = do
+    commits <- mapMaybe id <$> mapM (headAt nixpkgs) dates
 
--- Constants
-c_DOWNLOADS_DIRECTORY = "./saved-versions"
---
--- | Get the place where a JSON file with package versions should be saved.
-fileName :: FileType -> Hash -> Day -> String
-fileName fileType (Hash hash) day = show day <> "-" <> unpack hash <> "-" <> suffix fileType <> ".json"
+    putStrLn $ "Retrieved commits: "
+    putStrLn $ unlines (show <$> commits)
+
+    mapConcurrently(download <=< announce) commits
     where
-        suffix RawNixVersions = "raw"
-        suffix Preprocessed = "preprocessed"
+        (fromYear, _, _) = toGregorian from
+
+        (toYear, _, _) = toGregorian to
+
+        dates
+            = takeWhile (<= to)
+            $ dropWhile (< from)
+            $ [fromGregorian year month 1
+              | year <- [fromYear .. toYear]
+              , month <- [1..12]
+              ]
+
+        announce (Commit hash date) = do
+            print "----------------------------------------------"
+            putStrLn $ "Downloading files for " <> showGregorian date
+            print "----------------------------------------------"
+            return (Commit hash date)
+
+        download (Commit hash date) = do
+            result <- downloadFromNix (Commit hash date)
+            return $ first (date,) result
+
+
+
+
 
 -- | Get JSON version information from nixos.org
-downloadFromNix :: Commit -> IO FilePath
+downloadFromNix :: Commit -> IO (Either String FilePath)
 downloadFromNix (Commit hash day) = do
     fileAlreadyThere <- fileExist path
-    unless fileAlreadyThere (downloadNixVersionsTo path)
-    return path
+    if fileAlreadyThere
+       then return (return path)
+       else do
+           result <- downloadNixVersionsTo path
+           unless (isRight result) (delete path)
+           return result
     where
         path = c_DOWNLOADS_DIRECTORY <> "/" <> fileName RawNixVersions hash day
 
-        downloadNixVersionsTo = callCommand . command
+        delete = removeLink
+
+        downloadNixVersionsTo = run . shell . command
 
         -- | download package versions as JSON and save
         -- them at destination
@@ -85,6 +120,22 @@ downloadFromNix (Commit hash day) = do
             , "}"
             ]
 
+data FileType
+    = RawNixVersions
+    | Preprocessed
+
+nixpkgs :: Repo
+nixpkgs = Repo "../nixpkgs"
+
+-- Constants
+c_DOWNLOADS_DIRECTORY = "./saved-versions"
+--
+-- | Get the place where a JSON file with package versions should be saved.
+fileName :: FileType -> Hash -> Day -> String
+fileName fileType (Hash hash) day = showGregorian day <> "-" <> unpack hash <> "-" <> suffix fileType <> ".json"
+    where
+        suffix RawNixVersions = "raw"
+        suffix Preprocessed = "preprocessed"
 
 
 type Url = String
@@ -147,8 +198,8 @@ data Commit = Commit Hash Day
 -- | Returns the commit that was the head on that date
 headAt :: Repo -> Day -> IO (Maybe Commit)
 headAt repo day = do
-    output <- runInRepo repo $ "git log --format='%cs %H' --max-count=1 --until " <> show day
-    return $ either (const Nothing) Just $ parse commitParser "Commit" output
+    output <- runInRepo repo $ "git log --format='%cs %H' --max-count=1 --until " <> showGregorian day
+    return $ eitherToMaybe $ first show . parse commitParser "Commit" =<< output
     where
         -- Parses something that looks like this
         --  2015-02-12 a43db5fa2025c998ce0d72dc7dd425152d26ad59
@@ -158,15 +209,16 @@ headAt repo day = do
             hash <- Parsers.hash
             return $ Commit hash day
 
-commitDay :: Hash -> IO Day
-commitDay (Hash hash) = do
-    output <- liftIO $ runInRepo nixpkgs command
-    case readMaybe output of
-        Just day -> return day
-        Nothing  -> throw $ UnableToParseCommitDate (Hash hash)
-    where
-        command = "git show -s --format=%cs " <> unpack hash
+runInRepo :: Repo -> String -> IO (Either String String)
+runInRepo (Repo path) command = run $ (shell command) { cwd = Just path }
 
-runInRepo :: Repo -> String -> IO String
-runInRepo (Repo path) command =
-    readCreateProcess ((shell command) { cwd = Just path }) ""
+run :: CreateProcess -> IO (Either String String)
+run cmd = do
+    (exitCode, stdOut, stdErr) <- readCreateProcessWithExitCode cmd ""
+    return $ case exitCode of
+      ExitSuccess   -> Right stdOut
+      ExitFailure _ -> Left stdErr
+
+
+eitherToMaybe :: Either a b -> Maybe b
+eitherToMaybe = either (const Nothing) Just

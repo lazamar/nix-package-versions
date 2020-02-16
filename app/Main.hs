@@ -3,8 +3,11 @@
 module Main (main) where
 
 import Data.Aeson (encodeFile)
+import Data.Bifunctor (first)
+import Data.Either (partitionEithers)
+import Data.List (intersperse)
 import Data.Maybe (fromMaybe)
-import Nix.Versions.Json (nixpkgs, headAt, downloadFromNix, PackagesJSON(..), InfoJSON(..))
+import Nix.Versions.Json (nixpkgs, headAt, downloadVersionsInPeriod, downloadFromNix, PackagesJSON(..), InfoJSON(..))
 import Nix.Versions.Types (Channel(..), Name(..), Hash(..))
 
 import qualified Data.HashMap.Strict as H
@@ -13,13 +16,8 @@ import qualified Nix.Versions.Discover as Discover
 
 main :: IO ()
 main = do
-    Just head <- headAt nixpkgs $ read "2017-06-01"
-
-    pkgs <- downloadFromNix head
-    --print $ "Commit :" <> show (commit pkgs)
-    --encodeFile "result.txt"  pkgs
-    print $ "Created file " <> pkgs
-    --Just ghc <-return $ H.lookup (Name "ghc-6.10.4") (packages pkgs)
-    --print ghc
-    --versionsFound <- fromMaybe mempty $ Discover.allVersionsOf (Name "ghc") <$> nixpkgsPath ghc
-    --print versionsFound
+    files <- downloadVersionsInPeriod (read "2014-01-01") (read "2019-02-01")
+    let (failures, successes) = partitionEithers files
+    putStrLn $ unlines $ "Created files: ":successes
+    putStrLn $ "Failures: " <>  unlines (intersperse "--------" $ fmap (uncurry mappend . first show) failures)
+    return ()
