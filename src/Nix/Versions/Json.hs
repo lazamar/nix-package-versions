@@ -9,8 +9,11 @@
 
 module Nix.Versions.Json
     ( downloadFromNix
+    , nixpkgs
+    , headAt
     , PackagesJSON(..)
     , InfoJSON(..)
+    , Commit(..)
     ) where
 
 import Control.Exception (Exception(..), SomeException(..), throw)
@@ -26,7 +29,7 @@ import GHC.Generics (Generic)
 import Nix.Versions.Types (Channel(..), Hash(..), Name, Version(..))
 import System.Posix.Files (fileExist)
 import System.Process (callCommand, readCreateProcess, shell, CreateProcess(..))
-import Text.Parsec (parse)
+import Text.Parsec (parse, spaces)
 import Text.Read (readMaybe)
 
 import qualified Nix.Versions.Parsers as Parsers
@@ -35,9 +38,11 @@ data FileType
     = RawNixVersions
     | Preprocessed
 
+nixpkgs :: Repo
+nixpkgs = Repo "../nixpkgs"
+
 -- Constants
 c_DOWNLOADS_DIRECTORY = "./saved-versions"
-c_NIXPKGS_LOCAL_REPO = "../nixpkgs"
 --
 -- | Get the place where a JSON file with package versions should be saved.
 fileName :: FileType -> Hash -> Day -> String
@@ -47,14 +52,14 @@ fileName fileType (Hash hash) day = show day <> "-" <> unpack hash <> "-" <> suf
         suffix Preprocessed = "preprocessed"
 
 -- | Get JSON version information from nixos.org
-downloadFromNix :: Hash -> IO FilePath
-downloadFromNix hash = do
-    day <- commitDay hash
-    let path = c_DOWNLOADS_DIRECTORY <> "/" <> fileName RawNixVersions hash day
+downloadFromNix :: Commit -> IO FilePath
+downloadFromNix (Commit hash day) = do
     fileAlreadyThere <- fileExist path
     unless fileAlreadyThere (downloadNixVersionsTo path)
     return path
     where
+        path = c_DOWNLOADS_DIRECTORY <> "/" <> fileName RawNixVersions hash day
+
         downloadNixVersionsTo = callCommand . command
 
         -- | download package versions as JSON and save
@@ -81,14 +86,6 @@ downloadFromNix hash = do
             ]
 
 
-commitDay :: Hash -> IO Day
-commitDay (Hash hash) = do
-    output <- liftIO $ readCreateProcess ((shell command) { cwd = Just c_NIXPKGS_LOCAL_REPO  }) ""
-    case readMaybe output of
-        Just day -> return day
-        Nothing  -> throw $ UnableToParseCommitDate (Hash hash)
-    where
-        command = "git show -s --format=%cs " <> unpack hash
 
 type Url = String
 
@@ -137,3 +134,39 @@ instance Exception Error where
     fromException e = fromMaybe (Just $ Uncaught $ pack $ show e) (cast e)
     displayException = show
 
+
+--------------------------------------------------------------
+-- Commits
+
+-- A local clone of a git repository
+data Repo = Repo FilePath
+
+data Commit = Commit Hash Day
+    deriving (Show)
+
+-- | Returns the commit that was the head on that date
+headAt :: Repo -> Day -> IO (Maybe Commit)
+headAt repo day = do
+    output <- runInRepo repo $ "git log --format='%cs %H' --max-count=1 --until " <> show day
+    return $ either (const Nothing) Just $ parse commitParser "Commit" output
+    where
+        -- Parses something that looks like this
+        --  2015-02-12 a43db5fa2025c998ce0d72dc7dd425152d26ad59
+        commitParser = do
+            day <- Parsers.day
+            spaces
+            hash <- Parsers.hash
+            return $ Commit hash day
+
+commitDay :: Hash -> IO Day
+commitDay (Hash hash) = do
+    output <- liftIO $ runInRepo nixpkgs command
+    case readMaybe output of
+        Just day -> return day
+        Nothing  -> throw $ UnableToParseCommitDate (Hash hash)
+    where
+        command = "git show -s --format=%cs " <> unpack hash
+
+runInRepo :: Repo -> String -> IO String
+runInRepo (Repo path) command =
+    readCreateProcess ((shell command) { cwd = Just path }) ""

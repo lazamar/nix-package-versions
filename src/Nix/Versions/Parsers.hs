@@ -5,16 +5,19 @@ module Nix.Versions.Parsers
     , version
     , filePath
     , inQuotes
+    , day
     ) where
 
 import Control.Applicative ((<|>))
 import Data.Foldable (fold)
 import Data.List (intersperse)
 import Data.Text (pack)
+import Data.Time.Calendar (Day)
 import Nix.Versions.Types (Hash(..), Version(..))
 import Text.Parsec (ParseError, many, many1, sepBy, parse, oneOf, between)
 import Text.Parsec.Char (alphaNum, char, spaces, string, digit)
 import Text.Parsec.String (Parser)
+import Text.Parsec.Combinator (count)
 
 -- | Parse a SHA1 hash
 hash :: Parser Hash
@@ -43,3 +46,13 @@ separatedBy p separator =
 aName :: Parser String
 aName = many1 (alphaNum <|> char '-' <|> char '_' <|> char ' ' <|> char '.')
 
+-- | Parses a date that looks like this
+--  2020-02-16
+day :: Parser Day
+day = read <$> str
+    where
+        str = count 4 digit
+            <> (pure <$> char '-')
+            <> count 2 digit
+            <> (pure <$> char '-')
+            <> count 2 digit
