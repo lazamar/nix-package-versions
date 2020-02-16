@@ -35,12 +35,14 @@ data FileType
     = RawNixVersions
     | Preprocessed
 
+-- Constants
+c_DOWNLOADS_DIRECTORY = "./saved-versions"
+c_NIXPKGS_LOCAL_REPO = "../nixpkgs"
+--
 -- | Get the place where a JSON file with package versions should be saved.
-filePath :: FileType -> Hash -> Day -> FilePath
-filePath fileType (Hash hash) day = downloadsDirectory <> "/" <> show day <> "-" <> unpack hash <> "-" <> suffix fileType <> ".json"
+fileName :: FileType -> Hash -> Day -> String
+fileName fileType (Hash hash) day = show day <> "-" <> unpack hash <> "-" <> suffix fileType <> ".json"
     where
-        downloadsDirectory = "./saved-versions"
-
         suffix RawNixVersions = "raw"
         suffix Preprocessed = "preprocessed"
 
@@ -48,10 +50,10 @@ filePath fileType (Hash hash) day = downloadsDirectory <> "/" <> show day <> "-"
 downloadFromNix :: Hash -> IO FilePath
 downloadFromNix hash = do
     day <- commitDay hash
-    let file = filePath RawNixVersions hash day
-    fileAlreadyThere <- fileExist file
-    unless fileAlreadyThere (downloadNixVersionsTo file)
-    return file
+    let path = c_DOWNLOADS_DIRECTORY <> "/" <> fileName RawNixVersions hash day
+    fileAlreadyThere <- fileExist path
+    unless fileAlreadyThere (downloadNixVersionsTo path)
+    return path
     where
         downloadNixVersionsTo = callCommand . command
 
@@ -78,11 +80,10 @@ downloadFromNix hash = do
             , "}"
             ]
 
-nixpkgsLocalRepo = "../nixpkgs"
 
 commitDay :: Hash -> IO Day
 commitDay (Hash hash) = do
-    output <- liftIO $ readCreateProcess ((shell command) { cwd = Just nixpkgsLocalRepo }) ""
+    output <- liftIO $ readCreateProcess ((shell command) { cwd = Just c_NIXPKGS_LOCAL_REPO  }) ""
     case readMaybe output of
         Just day -> return day
         Nothing  -> throw $ UnableToParseCommitDate (Hash hash)
