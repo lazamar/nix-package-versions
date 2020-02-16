@@ -32,6 +32,8 @@ dependencies:
 - parallel
 - req
 - unix
+- time
+- exceptions
 
 library:
   source-dirs: src
