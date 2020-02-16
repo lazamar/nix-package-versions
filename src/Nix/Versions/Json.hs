@@ -13,9 +13,8 @@ module Nix.Versions.Json
     , InfoJSON(..)
     ) where
 
-import Control.Exception (Exception(..), SomeException(..))
+import Control.Exception (Exception(..), SomeException(..), throw)
 import Control.Monad (unless)
-import Control.Monad.Catch (MonadThrow, throwM)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Aeson (ToJSON, FromJSON, eitherDecodeFileStrict, parseJSON, withObject, (.:), (.:?), parseJSON)
 import Data.HashMap.Strict (HashMap)
@@ -81,12 +80,12 @@ downloadFromNix hash = do
 
 nixpkgsLocalRepo = "../nixpkgs"
 
-commitDay :: (MonadThrow m, MonadIO m) => Hash -> m Day
+commitDay :: Hash -> IO Day
 commitDay (Hash hash) = do
     output <- liftIO $ readCreateProcess ((shell command) { cwd = Just nixpkgsLocalRepo }) ""
     case readMaybe output of
         Just day -> return day
-        Nothing  -> throwM $ UnableToParseCommitDate (Hash hash)
+        Nothing  -> throw $ UnableToParseCommitDate (Hash hash)
     where
         command = "git show -s --format=%cs " <> unpack hash
 
@@ -123,8 +122,6 @@ instance FromJSON InfoJSON where
             case parse Parsers.filePath "Remove line number" rawPath of
                 Left _  -> rawPath
                 Right f -> f
-
-
 
 -- Exceptions
 
