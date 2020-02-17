@@ -10,6 +10,7 @@ module Nix.Versions.Database
     ( create
     , versions
     , VersionInfo(..)
+    , PackageDB
     ) where
 
 import Data.Aeson (ToJSON, FromJSON, eitherDecodeFileStrict)
@@ -75,4 +76,3 @@ merge (PackageDB db1) (PackageDB db2) =
             if date info1 > date info2
                then info1
                else info2
-

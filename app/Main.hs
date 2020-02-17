@@ -2,6 +2,7 @@
 
 module Main (main) where
 
+import Control.Monad (forever)
 import Control.Concurrent.Async (mapConcurrently)
 import Data.Aeson (encodeFile)
 import Data.Bifunctor (first)
@@ -9,6 +10,7 @@ import Data.Either (partitionEithers)
 import Data.List (intersperse, sortBy)
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Time.Calendar (Day, fromGregorian, toGregorian, showGregorian)
+import Data.Text (pack)
 import Nix.Versions.Json (nixpkgs, headAt, downloadVersionsInPeriod, downloadFromNix, PackagesJSON(..)
                          , InfoJSON(..))
 import Nix.Versions.Types (Channel(..), Name(..), Hash(..), Commit(..))
@@ -20,6 +22,7 @@ import qualified Nix.Versions.Database as DB
 
 import qualified Nix.Versions.Discover as Discover
 import qualified Nix.Versions.Parsers as Parsers
+import qualified Nix.Versions as V
 
 from :: Day
 from = read "2014-01-01"
@@ -28,7 +31,12 @@ to :: Day
 to = read "2019-02-01"
 
 main :: IO ()
-main = readCommits
+main = do
+    Right db <- V.loadDatabase from to
+    forever $ do
+        putStrLn "Type a package name"
+        pkg <- getLine
+        putStrLn $ unlines $ fmap show $ fromMaybe [] $ DB.versions db (Name $ pack pkg)
 
 download = do
     versions <- downloadVersionsInPeriod from to
@@ -37,25 +45,19 @@ download = do
     putStrLn $ unlines $ fmap show failures
 
     putStrLn "Succeses:"
-    putStrLn $ unlines successes
+    --putStrLn $ unlines successes
 
 
-readCommits :: IO ()
-readCommits = do
-    commits <- commitsBetween (read "2019-01-01") to
+saveDatabase :: IO ()
+saveDatabase = do
+    commits <- commitsBetween from to
     print "Got commits"
     (errors, jsons) <- partitionEithers <$> mapConcurrently Json.load commits
     putStrLn $ unlines errors
     print $ "Loaded jsons: " <> show (length jsons)
     let db = foldMap DB.create jsons
-    print "GHC Versions:"
-    putStrLn $ unlines $ fmap show
-        $ sortBy (compareBy $ DB.date . snd)
-        $ fromMaybe []
-        $ DB.versions db (Name "ghc")
-
-    where
-        compareBy f a b = compare (f a) (f b)
+    print "Saving database"
+    V.saveDatabase from to db
 
 commitsBetween :: Day -> Day -> IO [Commit]
 commitsBetween from to = mapMaybe id <$> mapConcurrently (headAt nixpkgs) dates

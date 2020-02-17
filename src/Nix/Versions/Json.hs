@@ -22,7 +22,7 @@ import Control.Concurrent.Async (mapConcurrently)
 import Control.Monad (unless, (<=<))
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Aeson (ToJSON, FromJSON, eitherDecodeFileStrict, parseJSON, withObject, (.:), (.:?), parseJSON)
-import Data.Bifunctor (first)
+import Data.Bifunctor (bimap, first)
 import Data.Either (isRight)
 import Data.Function ((&))
 import Data.HashMap.Strict (HashMap)
@@ -47,14 +47,10 @@ import qualified Nix.Versions.Parsers as Parsers
 -- | Download lists of packages and their versions
 -- for commits between from date and to date.
 -- Downloads one package list for each month in period.
-downloadVersionsInPeriod :: Day -> Day -> IO [Either (Day, String) FilePath]
+downloadVersionsInPeriod :: Day -> Day -> IO [Either (Day, String) (Commit, FilePath)]
 downloadVersionsInPeriod from to = do
     commits <- mapMaybe id <$> mapConcurrently (headAt nixpkgs) dates
-
-    putStrLn $ "Retrieved commits: "
-    putStrLn $ unlines (show <$> commits)
-
-    mapConcurrently(download <=< announce) commits
+    mapConcurrently (download <=< announce) commits
     where
         (fromYear, _, _) = toGregorian from
 
@@ -72,9 +68,9 @@ downloadVersionsInPeriod from to = do
             putStrLn $ "Downloading files for " <> showGregorian date
             return (Commit hash date)
 
-        download (Commit hash date) = do
-            result <- downloadFromNix (Commit hash date)
-            return $ first (date,) result
+        download commit@(Commit _ date) = do
+            result <- downloadFromNix commit
+            return $ bimap (date,) (commit,) result
 
 -- | Get JSON version information from nixos.org
 downloadFromNix :: Commit -> IO (Either String FilePath)
