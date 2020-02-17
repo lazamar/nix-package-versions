@@ -8,7 +8,6 @@ module Nix.Versions.Types
     ( Name(..)
     , Version(..)
     , Hash(..)
-    , Package(..)
     , Channel(..)
     , Repo(..)
     , Commit(..)
@@ -35,22 +34,11 @@ newtype Name = Name Text
 -- | A package version. e.g. v8.10-rc2
 newtype Version = Version Text
     deriving (Show, Eq, Generic)
-    deriving newtype (Monoid, Semigroup, FromJSON, FromJSONKey, ToJSON, Hashable)
+    deriving newtype (Monoid, Semigroup, FromJSON, FromJSONKey, ToJSON, ToJSONKey, Hashable)
 
 -- | A commit hash
 newtype Hash = Hash Text
     deriving (Eq, Show, Generic, FromJSON, ToJSON)
-
--- | A package with its version information
-data Package = Package
-    { name :: Name
-    -- path of file where the version was found.
-    -- e.g. pkgs/development/web/nodejs/default.nix
-    , nixpkgsPath :: FilePath
-    -- A map from version number to NixPkgs commit
-    -- that contains this package in that version.
-    , versions :: HashMap Version Hash
-    }
 
 -- A local clone of a git repository
 data Repo = Repo FilePath

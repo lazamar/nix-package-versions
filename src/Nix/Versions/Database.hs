@@ -1,18 +1,22 @@
  {-# LANGUAGE DeriveGeneric #-}
  {-# LANGUAGE OverloadedStrings #-}
+ {-# LANGUAGE DerivingStrategies #-}
+ {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 {-| This file handles the creation of a database of versions
    from package information coming from Nix
 -}
 module Nix.Versions.Database
-    (create
+    ( create
     , versions
+    , VersionInfo(..)
     ) where
 
-import Data.Aeson (eitherDecodeFileStrict)
+import Data.Aeson (ToJSON, FromJSON, eitherDecodeFileStrict)
 import Data.HashMap.Strict (HashMap)
 import Data.Text (Text, pack)
 import Data.Time.Calendar (Day)
+import GHC.Generics (Generic)
 import Nix.Versions.Types (Hash, Version, Name, Commit(..))
 import Nix.Versions.Json (PackagesJSON(PackagesJSON), InfoJSON)
 
@@ -31,6 +35,7 @@ packageNames = HashMap.keys . unPackageDB
 -- PackageDB
 
 newtype PackageDB = PackageDB { unPackageDB :: HashMap Name Versions }
+    deriving newtype (ToJSON, FromJSON)
 
 instance Semigroup PackageDB where
     (<>) = merge
@@ -45,7 +50,10 @@ data VersionInfo = VersionInfo
     , description :: Maybe Text
     , nixpath :: Maybe FilePath
     , date :: Day
-    } deriving (Show)
+    } deriving (Show, Eq, Generic)
+
+instance ToJSON VersionInfo
+instance FromJSON VersionInfo
 
 create :: PackagesJSON -> PackageDB
 create (PackagesJSON (Commit revision date) packages) = PackageDB $ HashMap.map toVersionInfo packages

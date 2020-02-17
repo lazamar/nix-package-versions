@@ -29,6 +29,8 @@ import Data.HashMap.Strict (HashMap)
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Text (pack, unpack, Text)
 import Data.Time.Calendar (Day, fromGregorian, toGregorian, showGregorian)
+import Data.Time.Clock (UTCTime(..))
+import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Data.Foldable (asum)
 import Data.Typeable (Typeable, cast)
 import GHC.Generics (Generic)
@@ -47,7 +49,7 @@ import qualified Nix.Versions.Parsers as Parsers
 -- Downloads one package list for each month in period.
 downloadVersionsInPeriod :: Day -> Day -> IO [Either (Day, String) FilePath]
 downloadVersionsInPeriod from to = do
-    commits <- mapMaybe id <$> mapM (headAt nixpkgs) dates
+    commits <- mapMaybe id <$> mapConcurrently (headAt nixpkgs) dates
 
     putStrLn $ "Retrieved commits: "
     putStrLn $ unlines (show <$> commits)
@@ -67,9 +69,7 @@ downloadVersionsInPeriod from to = do
               ]
 
         announce (Commit hash date) = do
-            print "----------------------------------------------"
             putStrLn $ "Downloading files for " <> showGregorian date
-            print "----------------------------------------------"
             return (Commit hash date)
 
         download (Commit hash date) = do
@@ -169,7 +169,7 @@ instance FromJSON InfoJSON where
     parseJSON = withObject "InfoJSON" $ \v -> InfoJSON
        <$> (v .: "meta" >>= (.:? "description"))
        <*>  v .:  "version"
-       <*> (fmap removeLineNumber <$> (v .: "meta" >>= (.:? "position")))
+       <*> (v .: "meta" >>= (.:? "position"))
        where
         -- | take some/path:123 and return some/path
         removeLineNumber :: FilePath -> FilePath
@@ -195,12 +195,14 @@ instance Exception Error where
 --------------------------------------------------------------
 -- Git
 
--- | Returns the commit that was the head on that date
+-- | Returns the commit that was the head on that date at 00:00 UTC
 headAt :: Repo -> Day -> IO (Maybe Commit)
 headAt repo day = do
-    output <- runInRepo repo $ "git log --format='%cs %H' --max-count=1 --until " <> showGregorian day
+    output <- runInRepo repo $ "git log --format='%cs %H' --max-count=1 --date=unix --until " <> show posix
     return $ eitherToMaybe $ first show . parse commitParser "Commit" =<< output
     where
+        posix = floor $ utcTimeToPOSIXSeconds $ UTCTime day $ fromInteger 0
+
         -- Parses something that looks like this
         --  2015-02-12 a43db5fa2025c998ce0d72dc7dd425152d26ad59
         commitParser = do
