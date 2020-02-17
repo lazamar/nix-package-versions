@@ -12,12 +12,12 @@ module Nix.Versions.Json
     , nixpkgs
     , headAt
     , downloadVersionsInPeriod
+    , load
     , PackagesJSON(..)
     , InfoJSON(..)
-    , Commit(..)
     ) where
 
-import Control.Exception (Exception(..), SomeException(..), throw)
+import Control.Exception (Exception(..), SomeException(..), throw, catch)
 import Control.Concurrent.Async (mapConcurrently)
 import Control.Monad (unless, (<=<))
 import Control.Monad.IO.Class (MonadIO, liftIO)
@@ -32,7 +32,7 @@ import Data.Time.Calendar (Day, fromGregorian, toGregorian, showGregorian)
 import Data.Foldable (asum)
 import Data.Typeable (Typeable, cast)
 import GHC.Generics (Generic)
-import Nix.Versions.Types (Channel(..), Hash(..), Name, Version(..))
+import Nix.Versions.Types (Channel(..), Hash(..), Name, Version(..), Commit(..), Repo(..))
 import System.Exit (ExitCode(..))
 import System.Posix.Files (fileExist, removeLink)
 import System.Process (readCreateProcessWithExitCode, shell, CreateProcess(..))
@@ -87,7 +87,7 @@ downloadFromNix (Commit hash day) = do
            unless (isRight result) (delete path)
            return result
     where
-        path = c_DOWNLOADS_DIRECTORY <> "/" <> fileName RawNixVersions hash day
+        path = filePath RawNixVersions (Commit hash day)
 
         delete = removeLink
 
@@ -119,8 +119,14 @@ downloadFromNix (Commit hash day) = do
 -------------------------------------------
 -- Loading packages
 
-load :: FilePath -> IO (Either String PackagesJSON)
-load path = eitherDecodeFileStrict path
+-- | Load package info from a commit that is already saved locally
+load :: Commit -> IO (Either String PackagesJSON)
+load commit = do
+    packages <-
+        catch
+            (eitherDecodeFileStrict $ filePath RawNixVersions commit)
+            (\(SomeException err) -> return $ Left $ show err)
+    return $ PackagesJSON commit <$> packages
 
 data FileType
     = RawNixVersions
@@ -133,9 +139,11 @@ nixpkgs = Repo "../nixpkgs"
 c_DOWNLOADS_DIRECTORY = "./saved-versions"
 --
 -- | Get the place where a JSON file with package versions should be saved.
-fileName :: FileType -> Hash -> Day -> String
-fileName fileType (Hash hash) day = showGregorian day <> "-" <> unpack hash <> "-" <> suffix fileType <> ".json"
+filePath :: FileType -> Commit -> FilePath
+filePath fileType (Commit (Hash hash) day) = c_DOWNLOADS_DIRECTORY <> "/" <> name
     where
+        name = showGregorian day <> "-" <> unpack hash <> "-" <> suffix fileType <> ".json"
+
         suffix RawNixVersions = "raw"
         suffix Preprocessed = "preprocessed"
 
@@ -147,13 +155,9 @@ revisionUrl (Hash hash) = "https://github.com/NixOS/nixpkgs/archive/" <> unpack 
 
 -- | The contents of a json file with package information
 data PackagesJSON = PackagesJSON
-    { commit :: Hash
-    , commitDate :: Day -- ^ commit date
+    { commit :: Commit
     , packages :: HashMap Name InfoJSON
     } deriving (Generic)
-
-instance FromJSON PackagesJSON
-instance ToJSON PackagesJSON
 
 data InfoJSON = InfoJSON
     { description :: Maybe Text
@@ -161,7 +165,6 @@ data InfoJSON = InfoJSON
     , nixpkgsPath :: Maybe FilePath
     } deriving (Show, Generic)
 
-instance ToJSON InfoJSON
 instance FromJSON InfoJSON where
     parseJSON = withObject "InfoJSON" $ \v -> InfoJSON
        <$> (v .: "meta" >>= (.:? "description"))
@@ -190,13 +193,7 @@ instance Exception Error where
 
 
 --------------------------------------------------------------
--- Commits
-
--- A local clone of a git repository
-data Repo = Repo FilePath
-
-data Commit = Commit Hash Day
-    deriving (Show)
+-- Git
 
 -- | Returns the commit that was the head on that date
 headAt :: Repo -> Day -> IO (Maybe Commit)

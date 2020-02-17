@@ -10,12 +10,15 @@ module Nix.Versions.Types
     , Hash(..)
     , Package(..)
     , Channel(..)
+    , Repo(..)
+    , Commit(..)
     ) where
 
 import Data.Aeson (FromJSON, FromJSONKey, ToJSON, ToJSONKey)
 import Data.Hashable (Hashable)
 import Data.HashMap.Strict (HashMap)
 import Data.Text (Text)
+import Data.Time.Calendar (Day)
 import Data.Monoid (Monoid)
 import GHC.Generics (Generic)
 
@@ -48,3 +51,9 @@ data Package = Package
     -- that contains this package in that version.
     , versions :: HashMap Version Hash
     }
+
+-- A local clone of a git repository
+data Repo = Repo FilePath
+
+data Commit = Commit Hash Day
+    deriving (Show)
