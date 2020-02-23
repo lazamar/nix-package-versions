@@ -27,17 +27,17 @@ data Channel
     | UnstableNixPkgs
 
 --  | The name of package. e.g. nodejs
-newtype Name = Name Text
+newtype Name = Name { fromName :: Text }
     deriving (Show, Eq, Generic)
     deriving newtype (Hashable, FromJSON, FromJSONKey, ToJSON, ToJSONKey)
 
 -- | A package version. e.g. v8.10-rc2
-newtype Version = Version Text
+newtype Version = Version { fromVersion :: Text }
     deriving (Show, Eq, Generic)
     deriving newtype (Monoid, Semigroup, FromJSON, FromJSONKey, ToJSON, ToJSONKey, Hashable)
 
 -- | A commit hash
-newtype Hash = Hash Text
+newtype Hash = Hash { fromHash :: Text }
     deriving (Eq, Show, Generic, FromJSON, ToJSON)
 
 -- A local clone of a git repository

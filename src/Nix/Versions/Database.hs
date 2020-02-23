@@ -2,6 +2,7 @@
  {-# LANGUAGE OverloadedStrings #-}
  {-# LANGUAGE DerivingStrategies #-}
  {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+ {-# LANGUAGE NamedFieldPuns #-}
 
 {-| This file handles the creation of a database of versions
    from package information coming from Nix
@@ -15,11 +16,15 @@ module Nix.Versions.Database
 
 import Data.Aeson (ToJSON, FromJSON, eitherDecodeFileStrict)
 import Data.HashMap.Strict (HashMap)
-import Data.Text (Text, pack)
-import Data.Time.Calendar (Day)
+import Data.Maybe (fromMaybe)
+import Data.Text (Text, pack, unpack)
+import Data.Time.Calendar (Day(..), toModifiedJulianDay)
 import GHC.Generics (Generic)
-import Nix.Versions.Types (Hash, Version, Name, Commit(..))
+import Nix.Versions.Types (Hash(..), Version(..), Name(..), Commit(..))
 import Nix.Versions.Json (PackagesJSON(PackagesJSON), InfoJSON)
+
+import qualified Database.SQLite.Simple as SQL
+import Database.SQLite.Simple (ToRow(toRow), FromRow(fromRow), SQLData(..))
 
 import qualified Nix.Versions.Json as Json
 import qualified Data.HashMap.Strict as HashMap
@@ -76,3 +81,49 @@ merge (PackageDB db1) (PackageDB db2) =
             if date info1 > date info2
                then info1
                else info2
+
+--------------------------------------------------------------------------------
+-- Saving on Disk
+
+newtype SQLPackageName = SQLPackageName Name
+
+instance ToRow SQLPackageName where
+    toRow (SQLPackageName (Name name)) = [SQLText name]
+
+instance FromRow SQLPackageName where
+    fromRow = (SQLPackageName . Name) <$> SQL.field
+
+newtype SQLPackageVersion = SQLPackageVersion (Version, VersionInfo)
+
+instance ToRow SQLPackageVersion where
+    toRow (SQLPackageVersion (version, VersionInfo { revision, description , nixpath, date })) =
+        [ SQLText $ fromVersion version
+        , SQLText $ fromHash revision
+        , nullable $ SQLText <$> description
+        , nullable $ SQLText . pack <$> nixpath
+        , SQLInteger $ fromInteger $ toModifiedJulianDay date
+        ]
+
+nullable :: Maybe SQLData -> SQLData
+nullable = fromMaybe SQLNull
+
+instance FromRow SQLPackageVersion where
+    fromRow = create
+            <$> SQL.field
+            <*> SQL.field
+            <*> SQL.field
+            <*> SQL.field
+            <*> SQL.field
+        where
+            create :: Text -> Text -> Maybe Text -> Maybe Text -> Integer -> SQLPackageVersion
+            create version revision description nixpath date =
+                SQLPackageVersion
+                    ( Version version
+                    , VersionInfo
+                        { revision = Hash revision
+                        , description = description
+                        , nixpath = unpack <$> nixpath
+                        , date = ModifiedJulianDay $ fromInteger date
+                        }
+                    )
+
