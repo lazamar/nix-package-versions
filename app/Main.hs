@@ -11,14 +11,16 @@ import Data.List (intersperse, sortBy)
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Time.Calendar (Day, fromGregorian, toGregorian, showGregorian)
 import Data.Text (pack)
-import Nix.Versions.Json (nixpkgs, headAt, downloadVersionsInPeriod, downloadFromNix, PackagesJSON(..)
-                         , InfoJSON(..))
+import Nix.Versions.Json (nixpkgs, headAt, downloadVersionsInPeriod, downloadFromNix
+                         , PackagesJSON(..), InfoJSON(..))
+import System.TimeIt (timeItNamed)
 import Nix.Versions.Types (Channel(..), Name(..), Hash(..), Commit(..))
 import Text.Parsec (parse)
 
 import qualified Data.HashMap.Strict as H
 import qualified Nix.Versions.Json as Json
 import qualified Nix.Versions.Database as DB
+import qualified Nix.Versions.Database.Persistent as Persistent
 
 import qualified Nix.Versions.Discover as Discover
 import qualified Nix.Versions.Parsers as Parsers
@@ -32,8 +34,39 @@ to = read "2019-02-01"
 
 main :: IO ()
 main = do
-    print "Creating database"
-    print "Database created"
+    conn <- Persistent.connect
+    res <- Persistent.versions conn (Name "haskellPackages.hlint")
+    showVersions res
+
+saveEntireDatabase :: IO ()
+saveEntireDatabase = do
+    print "Loading database from JSON"
+    Right db <- timeItNamed "Loading databases from JSON" $ V.loadDatabase from to
+    print "Creating SQL DB"
+    conn <- Persistent.connect
+    timeItNamed "Saving to SQL" $ Persistent.persist conn db
+    forever $ do
+        putStrLn "Finding versions in JSON"
+        pkg <- getName
+        res <- timeItNamed "JSON" $ inJSON db pkg
+        showVersions res
+
+
+        putStrLn "Finding versions in SQL"
+        pkg <- getName
+        res <- timeItNamed "SQL" $ Persistent.versions conn pkg
+        showVersions res
+    where
+        inJSON db name = do
+            res <- return $ fromMaybe [] $ DB.versions db name
+            return $ seq res res
+
+getName :: IO Name
+getName = Name . pack <$> getLine
+
+showVersions :: Show a => [a] -> IO ()
+showVersions = putStrLn . unlines . fmap show
+
 
 
 findPackages :: IO ()
