@@ -12,6 +12,7 @@ module Nix.Versions.Database
     , versions
     , VersionInfo(..)
     , PackageDB
+    , createSQLDatabase
     ) where
 
 import Data.Aeson (ToJSON, FromJSON, eitherDecodeFileStrict)
@@ -85,6 +86,29 @@ merge (PackageDB db1) (PackageDB db2) =
 --------------------------------------------------------------------------------
 -- Saving on Disk
 
+db_FILE_NAME = "SQL_DATABASE.db"
+db_PACKAGE_NAMES = "PACKAGE_NAMES"
+db_PACKAGE_VERSIONS = "PACKAGE_VERSIONS"
+
+createSQLDatabase :: IO ()
+createSQLDatabase = do
+    conn <- SQL.open db_FILE_NAME
+    SQL.execute_ conn $ "CREATE TABLE IF NOT EXISTS  " <> db_PACKAGE_NAMES <> " "
+                        <> "( ID INTEGER PRIMARY KEY"
+                        <> ", PACKAGE_NAME TEXT UNIQUE"
+                        <> ")"
+
+    SQL.execute_ conn $ "CREATE TABLE IF NOT EXISTS  " <> db_PACKAGE_VERSIONS <> " "
+                        <> "( PACKAGE_NAME TEXT NOT NULL"
+                        <> ", VERSION_NAME TEXT NOT NULL"
+                        <> ", REVISION_HASH TEXT NOT NULL"
+                        <> ", DESCRIPTION TEXT"
+                        <> ", NIXPATH TEXT"
+                        <> ", DAY INTEGER NOT NULL"
+                        <> ", PRIMARY KEY (PACKAGE_NAME, VERSION_NAME)"
+                        <> ", FOREIGN KEY (PACKAGE_NAME) REFERENCES " <> db_PACKAGE_NAMES <> "(PACKAGE_NAME)"
+                        <> ")"
+
 newtype SQLPackageName = SQLPackageName Name
 
 instance ToRow SQLPackageName where
@@ -93,11 +117,12 @@ instance ToRow SQLPackageName where
 instance FromRow SQLPackageName where
     fromRow = (SQLPackageName . Name) <$> SQL.field
 
-newtype SQLPackageVersion = SQLPackageVersion (Version, VersionInfo)
+newtype SQLPackageVersion = SQLPackageVersion (Name, Version, VersionInfo)
 
 instance ToRow SQLPackageVersion where
-    toRow (SQLPackageVersion (version, VersionInfo { revision, description , nixpath, date })) =
-        [ SQLText $ fromVersion version
+    toRow (SQLPackageVersion (name, version, VersionInfo { revision, description , nixpath, date })) =
+        [ SQLText $ fromName name
+        , SQLText $ fromVersion version
         , SQLText $ fromHash revision
         , nullable $ SQLText <$> description
         , nullable $ SQLText . pack <$> nixpath
@@ -114,11 +139,13 @@ instance FromRow SQLPackageVersion where
             <*> SQL.field
             <*> SQL.field
             <*> SQL.field
+            <*> SQL.field
         where
-            create :: Text -> Text -> Maybe Text -> Maybe Text -> Integer -> SQLPackageVersion
-            create version revision description nixpath date =
+            create :: Text -> Text -> Text -> Maybe Text -> Maybe Text -> Integer -> SQLPackageVersion
+            create name version revision description nixpath date =
                 SQLPackageVersion
-                    ( Version version
+                    ( Name name
+                    , Version version
                     , VersionInfo
                         { revision = Hash revision
                         , description = description

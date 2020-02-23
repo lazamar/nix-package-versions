@@ -32,12 +32,20 @@ to = read "2019-02-01"
 
 main :: IO ()
 main = do
+    print "Creating database"
+    DB.createSQLDatabase
+    print "Database created"
+
+
+findPackages :: IO ()
+findPackages = do
     Right db <- V.loadDatabase from to
     forever $ do
         putStrLn "Type a package name"
         pkg <- getLine
         putStrLn $ unlines $ fmap show $ fromMaybe [] $ DB.versions db (Name $ pack pkg)
 
+download :: IO ()
 download = do
     versions <- downloadVersionsInPeriod from to
     let (failures, successes) = partitionEithers versions
