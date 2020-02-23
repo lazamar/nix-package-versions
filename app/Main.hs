@@ -33,7 +33,6 @@ to = read "2019-02-01"
 main :: IO ()
 main = do
     print "Creating database"
-    DB.createSQLDatabase
     print "Database created"
 
 
