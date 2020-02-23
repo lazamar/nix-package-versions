@@ -5,11 +5,9 @@ This file handles saving and retrieving Database types from and to persistent st
 It uses SQLite.
 -}
 
-module Nix.Versions.Database.Persistent
-    ( connect
-    )
-    where
+module Nix.Versions.Database.Persistent where
 
+import Control.Exception (tryJust)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text, pack, unpack)
 import Data.Time.Calendar (Day(..), toModifiedJulianDay)
@@ -29,14 +27,16 @@ db_PACKAGE_VERSIONS = "PACKAGE_VERSIONS"
 connect :: IO SQL.Connection
 connect = do
     conn <- SQL.open db_FILE_NAME
+    -- Enable foreign key constraints.
+    -- It's really weird that they would otherwise just not work.
+    SQL.execute_ conn "PRAGMA foreign_keys = ON"
     ensureTablesAreCreated conn
     return conn
 
 ensureTablesAreCreated :: SQL.Connection -> IO ()
 ensureTablesAreCreated conn = do
     SQL.execute_ conn $ "CREATE TABLE IF NOT EXISTS  " <> db_PACKAGE_NAMES <> " "
-                        <> "( ID INTEGER PRIMARY KEY"
-                        <> ", PACKAGE_NAME TEXT UNIQUE"
+                        <> "( PACKAGE_NAME TEXT PRIMARY KEY"
                         <> ")"
 
     SQL.execute_ conn $ "CREATE TABLE IF NOT EXISTS  " <> db_PACKAGE_VERSIONS <> " "
@@ -60,6 +60,31 @@ versions conn (Name name) = do
         where
             toVersionAndInfo (SQLPackageVersion (_, version, info)) = (version, info)
 
+-- | Save the DB in the database
+persistPackage :: SQL.Connection -> SQLPackageVersion -> IO ()
+persistPackage conn versionInfo = do
+    result <- tryJust isConstraintError  insertVersion
+    case result of
+        Left () -> do
+            insertPackageName
+            insertVersion
+        Right _ -> return ()
+    where
+        insertVersion = SQL.execute conn
+            ("INSERT OR REPLACE INTO " <> db_PACKAGE_VERSIONS <> " VALUES (?,?,?,?,?,?)")
+            versionInfo
+
+        insertPackageName = SQL.execute conn
+            ("INSERT OR REPLACE INTO " <> db_PACKAGE_NAMES <> " VALUES (?)")
+            (SQLPackageName name)
+
+        SQLPackageVersion (name, _, _) = versionInfo
+
+        isConstraintError :: SQL.SQLError -> Maybe ()
+        isConstraintError err =
+            if SQL.sqlError err == SQL.ErrorConstraint
+               then Just ()
+               else Nothing
 
 newtype SQLPackageName = SQLPackageName Name
 
