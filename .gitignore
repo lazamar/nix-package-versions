@@ -2,3 +2,6 @@
 nix-package-versions.cabal
 *~
 saved-versions
+
+# SQLite Databases
+*.db
