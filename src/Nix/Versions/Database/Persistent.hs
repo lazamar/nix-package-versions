@@ -7,14 +7,16 @@ It uses SQLite.
 
 module Nix.Versions.Database.Persistent where
 
-import Control.Exception (tryJust)
+import Control.Concurrent.Async (mapConcurrently_)
+import Control.Exception (catchJust)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text, pack, unpack)
 import Data.Time.Calendar (Day(..), toModifiedJulianDay)
+import Database.SQLite.Simple (ToRow(toRow), FromRow(fromRow), SQLData(..))
 import Nix.Versions.Database (PackageDB(..), VersionInfo(..))
 import Nix.Versions.Types (Hash(..), Version(..), Name(..), Commit(..))
 
-import Database.SQLite.Simple (ToRow(toRow), FromRow(fromRow), SQLData(..))
+import qualified Data.HashMap.Strict as HashMap
 import qualified Database.SQLite.Simple as SQL
 
 -- Constants
@@ -50,6 +52,7 @@ ensureTablesAreCreated conn = do
                         <> ", FOREIGN KEY (PACKAGE_NAME) REFERENCES " <> db_PACKAGE_NAMES <> "(PACKAGE_NAME)"
                         <> ")"
 
+-- | Retrieve all versions available for a package
 versions :: SQL.Connection -> Name -> IO [(Version, VersionInfo)]
 versions conn (Name name) = do
     results <- SQL.query
@@ -60,25 +63,34 @@ versions conn (Name name) = do
         where
             toVersionAndInfo (SQLPackageVersion (_, version, info)) = (version, info)
 
--- | Save the DB in the database
-persistPackage :: SQL.Connection -> SQLPackageVersion -> IO ()
-persistPackage conn versionInfo = do
-    result <- tryJust isConstraintError  insertVersion
-    case result of
-        Left () -> do
-            insertPackageName
-            insertVersion
-        Right _ -> return ()
+-- | Save the entire database
+persist :: SQL.Connection -> PackageDB -> IO ()
+persist conn (PackageDB packages) = do
+    mapConcurrently_ (uncurry persistPackage) (HashMap.toList packages)
+    return ()
+    where
+        persistPackage name versions =
+            mapConcurrently_
+                (uncurry $ persistVersion conn name)
+                (HashMap.toList versions)
+
+-- | Save the version info of a package in the database
+persistVersion :: SQL.Connection -> Name -> Version -> VersionInfo -> IO ()
+persistVersion conn packageName version versionInfo =
+    catchJust
+        noPackageName
+        insertVersion
+        (\_ -> insertPackageName >> insertVersion)
     where
         insertVersion = SQL.execute conn
             ("INSERT OR REPLACE INTO " <> db_PACKAGE_VERSIONS <> " VALUES (?,?,?,?,?,?)")
-            versionInfo
+            (SQLPackageVersion (packageName, version, versionInfo))
 
         insertPackageName = SQL.execute conn
             ("INSERT OR REPLACE INTO " <> db_PACKAGE_NAMES <> " VALUES (?)")
-            (SQLPackageName name)
+            (SQLPackageName packageName)
 
-        SQLPackageVersion (name, _, _) = versionInfo
+        noPackageName = isConstraintError
 
         isConstraintError :: SQL.SQLError -> Maybe ()
         isConstraintError err =
