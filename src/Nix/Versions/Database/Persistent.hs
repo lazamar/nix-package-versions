@@ -1,11 +1,14 @@
- {-# LANGUAGE OverloadedStrings #-}
- {-# LANGUAGE NamedFieldPuns #-}
 {-|
 This file handles saving and retrieving Database types from and to persistent storage.
 It uses SQLite.
 -}
 
-module Nix.Versions.Database.Persistent where
+module Nix.Versions.Database.Persistent
+    ( defaultDBFileName
+    , connect
+    , versions
+    , persist
+    ) where
 
 import Control.Concurrent.Async (mapConcurrently_)
 import Control.Exception (catchJust)
@@ -19,21 +22,24 @@ import Nix.Versions.Types (Hash(..), Version(..), Name(..), Commit(..))
 import qualified Data.HashMap.Strict as HashMap
 import qualified Database.SQLite.Simple as SQL
 
+newtype Connection = Connection SQL.Connection
 -- Constants
 
-db_FILE_NAME = "SQL_DATABASE.db"
+defaultDBFileName :: Text
+defaultDBFileName = "SQL_DATABASE.db"
+
 db_PACKAGE_NAMES = "PACKAGE_NAMES"
 db_PACKAGE_VERSIONS = "PACKAGE_VERSIONS"
 
--- | Get a connection and make sure that
-connect :: IO SQL.Connection
-connect = do
-    conn <- SQL.open db_FILE_NAME
+-- | Get a connection and prepare database for usage
+connect :: Text -> IO Connection
+connect dbFileName = do
+    conn <- SQL.open $ unpack dbFileName
     -- Enable foreign key constraints.
     -- It's really weird that they would otherwise just not work.
     SQL.execute_ conn "PRAGMA foreign_keys = ON"
     ensureTablesAreCreated conn
-    return conn
+    return $ Connection conn
 
 ensureTablesAreCreated :: SQL.Connection -> IO ()
 ensureTablesAreCreated conn = do
@@ -53,8 +59,8 @@ ensureTablesAreCreated conn = do
                         <> ")"
 
 -- | Retrieve all versions available for a package
-versions :: SQL.Connection -> Name -> IO [(Version, VersionInfo)]
-versions conn (Name name) = do
+versions :: Connection -> Name -> IO [(Version, VersionInfo)]
+versions (Connection conn) (Name name) = do
     results <- SQL.query
         conn
         ("SELECT * FROM " <> db_PACKAGE_VERSIONS <> " WHERE PACKAGE_NAME = ?")
@@ -64,7 +70,7 @@ versions conn (Name name) = do
             toVersionAndInfo (SQLPackageVersion (_, version, info)) = (version, info)
 
 -- | Save the entire database
-persist :: SQL.Connection -> PackageDB -> IO ()
+persist :: Connection -> PackageDB -> IO ()
 persist conn (PackageDB packages) = do
     mapConcurrently_ (uncurry persistPackage) (HashMap.toList packages)
     return ()
@@ -75,10 +81,9 @@ persist conn (PackageDB packages) = do
                 (HashMap.toList versions)
 
 -- | Save the version info of a package in the database
-persistVersion :: SQL.Connection -> Name -> Version -> VersionInfo -> IO ()
-persistVersion conn packageName version versionInfo =
-    catchJust
-        noPackageName
+persistVersion :: Connection -> Name -> Version -> VersionInfo -> IO ()
+persistVersion (Connection conn) packageName version versionInfo =
+    catchJust noPackageWithThatName
         insertVersion
         (\_ -> insertPackageName >> insertVersion)
     where
@@ -90,7 +95,7 @@ persistVersion conn packageName version versionInfo =
             ("INSERT OR REPLACE INTO " <> db_PACKAGE_NAMES <> " VALUES (?)")
             (SQLPackageName packageName)
 
-        noPackageName = isConstraintError
+        noPackageWithThatName = isConstraintError
 
         isConstraintError :: SQL.SQLError -> Maybe ()
         isConstraintError err =

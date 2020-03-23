@@ -39,6 +39,9 @@ dependencies:
 
 library:
   source-dirs: src
+  default-extensions:
+    OverloadedStrings
+    NamedFieldPuns
 
 executables:
   nix-package-versions-exe:

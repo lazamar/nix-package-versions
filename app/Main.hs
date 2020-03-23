@@ -34,7 +34,7 @@ to = read "2019-02-01"
 
 main :: IO ()
 main = do
-    conn <- Persistent.connect
+    conn <- Persistent.connect Persistent.defaultDBFileName
     res <- Persistent.versions conn (Name "haskellPackages.hlint")
     showVersions res
 
@@ -43,7 +43,7 @@ saveEntireDatabase = do
     print "Loading database from JSON"
     Right db <- timeItNamed "Loading databases from JSON" $ V.loadDatabase from to
     print "Creating SQL DB"
-    conn <- Persistent.connect
+    conn <- Persistent.connect Persistent.defaultDBFileName
     timeItNamed "Saving to SQL" $ Persistent.persist conn db
     forever $ do
         putStrLn "Finding versions in JSON"
