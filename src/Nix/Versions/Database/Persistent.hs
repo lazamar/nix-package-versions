@@ -6,8 +6,10 @@ It uses SQLite.
 module Nix.Versions.Database.Persistent
     ( defaultDBFileName
     , connect
+    , disconnect
     , versions
     , persist
+    , Connection
     ) where
 
 import Control.Concurrent.Async (mapConcurrently_)
@@ -57,6 +59,9 @@ ensureTablesAreCreated conn = do
                         <> ", PRIMARY KEY (PACKAGE_NAME, VERSION_NAME)"
                         <> ", FOREIGN KEY (PACKAGE_NAME) REFERENCES " <> db_PACKAGE_NAMES <> "(PACKAGE_NAME)"
                         <> ")"
+
+disconnect :: Connection -> IO ()
+disconnect (Connection conn) = SQL.close conn
 
 -- | Retrieve all versions available for a package
 versions :: Connection -> Name -> IO [(Version, VersionInfo)]
