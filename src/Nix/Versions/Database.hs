@@ -4,7 +4,7 @@
  {-# LANGUAGE GeneralizedNewtypeDeriving #-}
  {-# LANGUAGE NamedFieldPuns #-}
 
-{-| This file handles the creation of a database of versions
+{-| This module handles the creation of a database of versions
    from package information coming from Nix
 -}
 module Nix.Versions.Database
@@ -21,9 +21,9 @@ import Data.Text (Text, pack, unpack)
 import Data.Time.Calendar (Day(..), toModifiedJulianDay)
 import GHC.Generics (Generic)
 import Nix.Versions.Types (Hash(..), Version(..), Name(..), Commit(..))
-import Nix.Versions.Json (PackagesJSON(PackagesJSON), InfoJSON)
+import Nix.Revision (PackagesJSON(PackagesJSON), InfoJSON)
 
-import qualified Nix.Versions.Json as Json
+import qualified Nix.Revision as Revision
 import qualified Data.HashMap.Strict as HashMap
 
 versions :: PackageDB -> Name -> Maybe [(Version, VersionInfo)]
@@ -63,10 +63,10 @@ create (PackagesJSON (Commit revision date) packages) = PackageDB $ HashMap.map 
     where
         toVersionInfo :: InfoJSON -> HashMap Version VersionInfo
         toVersionInfo info =
-            HashMap.singleton (Json.version info) $ VersionInfo
+            HashMap.singleton (Revision.version info) $ VersionInfo
                 { revision = revision
-                , description = Json.description info
-                , nixpath = Json.nixpkgsPath info
+                , description = Revision.description info
+                , nixpath = Revision.nixpkgsPath info
                 , date = date
                 }
 

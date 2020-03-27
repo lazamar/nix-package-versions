@@ -11,14 +11,14 @@ import Data.List (intersperse, sortBy)
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Time.Calendar (Day, fromGregorian, toGregorian, showGregorian)
 import Data.Text (pack)
-import Nix.Versions.Json (nixpkgs, headAt, downloadVersionsInPeriod, downloadFromNix
+import Nix.Revision (nixpkgs, headAt, downloadVersionsInPeriod, downloadFromNix
                          , PackagesJSON(..), InfoJSON(..))
 import System.TimeIt (timeItNamed)
 import Nix.Versions.Types (Channel(..), Name(..), Hash(..), Commit(..))
 import Text.Parsec (parse)
 
 import qualified Data.HashMap.Strict as H
-import qualified Nix.Versions.Json as Json
+import qualified Nix.Revision as Revision
 import qualified Nix.Versions.Database as DB
 import qualified Nix.Versions.Database.Persistent as Persistent
 
@@ -92,7 +92,7 @@ saveDatabase :: IO ()
 saveDatabase = do
     commits <- commitsBetween from to
     print "Got commits"
-    (errors, jsons) <- partitionEithers <$> mapConcurrently Json.load commits
+    (errors, jsons) <- partitionEithers <$> mapConcurrently Revision.load commits
     putStrLn $ unlines errors
     print $ "Loaded jsons: " <> show (length jsons)
     let db = foldMap DB.create jsons

@@ -1,6 +1,5 @@
 {-|
-This file handles saving and retrieving Database types from and to persistent storage.
-It uses SQLite.
+Save and retrieving Database types from persistent storage
 -}
 
 module Nix.Versions.Database.Persistent

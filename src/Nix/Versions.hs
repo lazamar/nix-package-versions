@@ -10,15 +10,15 @@ import Nix.Versions.Database (PackageDB)
 import Data.Aeson (encodeFile, eitherDecodeFileStrict)
 
 import qualified Nix.Versions.Database as DB
-import qualified Nix.Versions.Json as Json
+import qualified Nix.Revision as Revision
 
 createDatabase :: Day -> Day -> IO PackageDB
 createDatabase from to = do
     (revisionFailures, revisionFiles) <-
-        partitionEithers <$> Json.downloadVersionsInPeriod from to
+        partitionEithers <$> Revision.downloadVersionsInPeriod from to
 
     (jsonFailures, jsons) <-
-        partitionEithers <$> mapConcurrently Json.load (fst <$> revisionFiles)
+        partitionEithers <$> mapConcurrently Revision.load (fst <$> revisionFiles)
 
     let database = foldMap DB.create jsons
     encodeFile (databasePath from to) database

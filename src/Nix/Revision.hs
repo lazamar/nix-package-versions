@@ -3,11 +3,11 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TupleSections #-}
 
-{-| This module is responsible handles downloading and parsing the package
-   versioning information available at https://nixos.org/nixos/packages
+{-| This module retrieves and parses information about Nix revisions.
+   Revisions are available at https://nixos.org/nixos/packages
 -}
 
-module Nix.Versions.Json
+module Nix.Revision
     ( downloadFromNix
     , nixpkgs
     , headAt
