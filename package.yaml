@@ -38,6 +38,8 @@ dependencies:
 - sqlite-simple
 - temporary
 - hspec
+- req
+- mtl
 
 library:
   source-dirs: src

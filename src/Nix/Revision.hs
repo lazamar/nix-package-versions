@@ -13,20 +13,23 @@ module Nix.Revision
     , headAt
     , downloadVersionsInPeriod
     , load
+    , gheadAt
+    , gnixpkgs
     , Revision(..)
     , Package(..)
     ) where
 
-import Control.Exception (Exception(..), SomeException(..), throw, catch)
+import Control.Exception (Exception(..), SomeException(..), throw, catch, tryJust)
 import Control.Concurrent.Async (mapConcurrently)
-import Control.Monad (unless, (<=<))
+import Control.Monad (unless, (<=<), join)
+import Control.Monad.Except (runExceptT, liftEither)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Aeson (ToJSON, FromJSON, eitherDecodeFileStrict, parseJSON, withObject, (.:), (.:?), parseJSON)
 import Data.Bifunctor (bimap, first)
 import Data.Either (isRight)
 import Data.Function ((&))
 import Data.HashMap.Strict (HashMap)
-import Data.Maybe (fromMaybe, mapMaybe)
+import Data.Maybe (fromMaybe, mapMaybe, listToMaybe)
 import Data.Text (pack, unpack, Text)
 import Data.Time.Calendar (Day, fromGregorian, toGregorian, showGregorian)
 import Data.Time.Clock (UTCTime(..))
@@ -41,6 +44,7 @@ import System.Process (readCreateProcessWithExitCode, shell, CreateProcess(..))
 import Text.Parsec (parse, spaces)
 import Text.Read (readMaybe)
 
+import qualified Network.HTTP.Req as Req
 import qualified Nix.Versions.Parsers as Parsers
 
 
@@ -220,3 +224,68 @@ run cmd = do
 
 eitherToMaybe :: Either a b -> Maybe b
 eitherToMaybe = either (const Nothing) Just
+
+----------------------------
+-- GitHub
+
+gnixpkgs :: GitHubRepo
+gnixpkgs = GitHubRepo
+    { g_user = "NixOS"
+    , g_repo = "nixpkgs"
+    }
+
+data GitHubRepo = GitHubRepo
+    { g_user :: Text
+    , g_repo :: Text
+    }
+
+newtype GitHubCommit = GitHubCommit
+    { unGitHubCommit :: Commit
+    }
+
+instance FromJSON GitHubCommit where
+    parseJSON = withObject "GitHubCommit " $ \v ->
+        handle
+        <$> (v .: "sha")
+        <*> (v .: "commit" >>= (.: "committer") >>= (.: "date"))
+       where
+           handle sha date = GitHubCommit $ Commit (Hash sha) (readGregorian date)
+
+           readGregorian :: String -> Day
+           readGregorian = read . take 10
+
+-- | Fetch the commit that was the HEAD at 0 hours on the specified day
+gheadAt :: GitHubRepo -> Day -> IO (Either String Commit)
+gheadAt repo day = runExceptT $ do
+    response <- catching  isHttpException
+        $ Req.req Req.GET url Req.NoReqBody Req.jsonResponse options
+
+    liftEither
+        $ maybe (Left "Received empty commit list from remote") Right
+        $ fmap unGitHubCommit
+        $ listToMaybe
+        $ Req.responseBody response
+    where
+        options =
+            Req.header "User-Agent" "lazamar"
+            <>
+            Req.queryParam "until" (Just $ pack $ showGregorian day <> "T00:00:00Z")
+
+        url = Req.https "api.github.com"
+            Req./: "repos"
+            Req./: g_user repo
+            Req./: g_repo repo
+            Req./: "commits"
+
+        a </> b = a <> "/" <> b
+
+        isHttpException :: Req.HttpException -> Maybe String
+        isHttpException = Just . show
+
+        catching exc
+            = join
+            . liftIO
+            . fmap liftEither
+            . tryJust exc
+            . Req.runReq Req.defaultHttpConfig
+
