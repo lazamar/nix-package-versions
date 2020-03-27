@@ -13,8 +13,8 @@ module Nix.Revision
     , headAt
     , downloadVersionsInPeriod
     , load
-    , PackagesJSON(..)
-    , InfoJSON(..)
+    , Revision(..)
+    , Package(..)
     ) where
 
 import Control.Exception (Exception(..), SomeException(..), throw, catch)
@@ -116,13 +116,13 @@ downloadFromNix (Commit hash day) = do
 -- Loading packages
 
 -- | Load package info from a commit that is already saved locally
-load :: Commit -> IO (Either String PackagesJSON)
+load :: Commit -> IO (Either String Revision)
 load commit = do
     packages <-
         catch
             (eitherDecodeFileStrict $ filePath RawNixVersions commit)
             (\(SomeException err) -> return $ Left $ show err)
-    return $ PackagesJSON commit <$> packages
+    return $ Revision commit <$> packages
 
 data FileType
     = RawNixVersions
@@ -150,19 +150,19 @@ revisionUrl :: Hash -> Url
 revisionUrl (Hash hash) = "https://github.com/NixOS/nixpkgs/archive/" <> unpack hash <> ".tar.gz"
 
 -- | The contents of a json file with package information
-data PackagesJSON = PackagesJSON
+data Revision = Revision
     { commit :: Commit
-    , packages :: HashMap Name InfoJSON
+    , packages :: HashMap Name Package
     } deriving (Generic)
 
-data InfoJSON = InfoJSON
+data Package = Package
     { description :: Maybe Text
     , version :: Version
     , nixpkgsPath :: Maybe FilePath
     } deriving (Show, Generic)
 
-instance FromJSON InfoJSON where
-    parseJSON = withObject "InfoJSON" $ \v -> InfoJSON
+instance FromJSON Package where
+    parseJSON = withObject "Package" $ \v -> Package
        <$> (v .: "meta" >>= (.:? "description"))
        <*>  v .:  "version"
        <*> (v .: "meta" >>= (.:? "position"))

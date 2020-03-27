@@ -11,8 +11,7 @@ import Data.List (intersperse, sortBy)
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Time.Calendar (Day, fromGregorian, toGregorian, showGregorian)
 import Data.Text (pack)
-import Nix.Revision (nixpkgs, headAt, downloadVersionsInPeriod, downloadFromNix
-                         , PackagesJSON(..), InfoJSON(..))
+import Nix.Revision (nixpkgs, headAt, downloadVersionsInPeriod, downloadFromNix)
 import System.TimeIt (timeItNamed)
 import Nix.Versions.Types (Channel(..), Name(..), Hash(..), Commit(..))
 import Text.Parsec (parse)
@@ -22,7 +21,6 @@ import qualified Nix.Revision as Revision
 import qualified Nix.Versions.Database as DB
 import qualified Nix.Versions.Database.Persistent as Persistent
 
-import qualified Nix.Versions.Discover as Discover
 import qualified Nix.Versions.Parsers as Parsers
 import qualified Nix.Versions as V
 

@@ -21,7 +21,7 @@ import Data.Text (Text, pack, unpack)
 import Data.Time.Calendar (Day(..), toModifiedJulianDay)
 import GHC.Generics (Generic)
 import Nix.Versions.Types (Hash(..), Version(..), Name(..), Commit(..))
-import Nix.Revision (PackagesJSON(PackagesJSON), InfoJSON)
+import Nix.Revision (Revision(Revision), Package)
 
 import qualified Nix.Revision as Revision
 import qualified Data.HashMap.Strict as HashMap
@@ -58,10 +58,10 @@ data VersionInfo = VersionInfo
 instance ToJSON VersionInfo
 instance FromJSON VersionInfo
 
-create :: PackagesJSON -> PackageDB
-create (PackagesJSON (Commit revision date) packages) = PackageDB $ HashMap.map toVersionInfo packages
+create :: Revision -> PackageDB
+create (Revision (Commit revision date) packages) = PackageDB $ HashMap.map toVersionInfo packages
     where
-        toVersionInfo :: InfoJSON -> HashMap Version VersionInfo
+        toVersionInfo :: Package -> HashMap Version VersionInfo
         toVersionInfo info =
             HashMap.singleton (Revision.version info) $ VersionInfo
                 { revision = revision
