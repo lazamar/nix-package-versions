@@ -7,7 +7,7 @@ module Nix.Versions.Database.Persistent
     , connect
     , disconnect
     , versions
-    , persist
+    , save
     , Connection
     ) where
 
@@ -74,8 +74,8 @@ versions (Connection conn) (Name name) = do
             toInfo (SQLPackageVersion (_, pkg, commit)) = (commit, pkg)
 
 -- | Save the entire database
-persist :: Connection -> Revision -> IO ()
-persist conn (Revision commit packages) = do
+save :: Connection -> Revision -> IO ()
+save conn (Revision commit packages) = do
     mapConcurrently_ persistPackage (HashMap.toList packages)
     where
         persistPackage (name, info) =

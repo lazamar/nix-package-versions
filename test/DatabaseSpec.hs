@@ -30,9 +30,9 @@ spec = do
                     commit = Commit (Hash "hash") (ModifiedJulianDay 10)
                     revision = Revision commit $ HM.fromList [(pname, pkg)]
 
-                () <- P.persist conn revision
+                () <- P.save conn revision
                 v1 <- P.versions conn pname
-                () <- P.persist conn revision
+                () <- P.save conn revision
                 v2 <- P.versions conn pname
                 v1 `shouldBe` v2
                 length v1 `shouldBe` 1
