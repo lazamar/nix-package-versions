@@ -163,7 +163,7 @@ data Package = Package
     { description :: Maybe Text
     , version :: Version
     , nixpkgsPath :: Maybe FilePath
-    } deriving (Show, Generic)
+    } deriving (Show, Generic, Eq)
 
 instance FromJSON Package where
     parseJSON = withObject "Package" $ \v -> Package

@@ -17,7 +17,7 @@ import Data.Maybe (fromMaybe)
 import Data.Text (Text, pack, unpack)
 import Data.Time.Calendar (Day(..), toModifiedJulianDay)
 import Database.SQLite.Simple (ToRow(toRow), FromRow(fromRow), SQLData(..))
-import Nix.Versions.Database (PackageDB(..), VersionInfo(..))
+import Nix.Revision (Revision(..), Package(..))
 import Nix.Versions.Types (Hash(..), Version(..), Name(..), Commit(..))
 
 import qualified Data.HashMap.Strict as HashMap
@@ -63,41 +63,39 @@ disconnect :: Connection -> IO ()
 disconnect (Connection conn) = SQL.close conn
 
 -- | Retrieve all versions available for a package
-versions :: Connection -> Name -> IO [(Version, VersionInfo)]
+versions :: Connection -> Name -> IO [(Commit, Package)]
 versions (Connection conn) (Name name) = do
     results <- SQL.query
         conn
         ("SELECT * FROM " <> db_PACKAGE_VERSIONS <> " WHERE PACKAGE_NAME = ?")
         [unpack name]
-    return $ toVersionAndInfo <$> results
+    return $ toInfo <$> results
         where
-            toVersionAndInfo (SQLPackageVersion (_, version, info)) = (version, info)
+            toInfo (SQLPackageVersion (_, pkg, commit)) = (commit, pkg)
 
 -- | Save the entire database
-persist :: Connection -> PackageDB -> IO ()
-persist conn (PackageDB packages) = do
-    mapConcurrently_ (uncurry persistPackage) (HashMap.toList packages)
-    return ()
+persist :: Connection -> Revision -> IO ()
+persist conn (Revision commit packages) = do
+    mapConcurrently_ persistPackage (HashMap.toList packages)
     where
-        persistPackage name versions =
-            mapConcurrently_
-                (uncurry $ persistVersion conn name)
-                (HashMap.toList versions)
+        persistPackage (name, info) =
+            persistVersion conn commit name info
+
 
 -- | Save the version info of a package in the database
-persistVersion :: Connection -> Name -> Version -> VersionInfo -> IO ()
-persistVersion (Connection conn) packageName version versionInfo =
+persistVersion :: Connection -> Commit -> Name -> Package -> IO ()
+persistVersion (Connection conn) commit name info =
     catchJust noPackageWithThatName
         insertVersion
         (\_ -> insertPackageName >> insertVersion)
     where
         insertVersion = SQL.execute conn
             ("INSERT OR REPLACE INTO " <> db_PACKAGE_VERSIONS <> " VALUES (?,?,?,?,?,?)")
-            (SQLPackageVersion (packageName, version, versionInfo))
+            (SQLPackageVersion (name, info, commit))
 
         insertPackageName = SQL.execute conn
             ("INSERT OR REPLACE INTO " <> db_PACKAGE_NAMES <> " VALUES (?)")
-            (SQLPackageName packageName)
+            (SQLPackageName name)
 
         noPackageWithThatName = isConstraintError
 
@@ -115,15 +113,15 @@ instance ToRow SQLPackageName where
 instance FromRow SQLPackageName where
     fromRow = (SQLPackageName . Name) <$> SQL.field
 
-newtype SQLPackageVersion = SQLPackageVersion (Name, Version, VersionInfo)
+newtype SQLPackageVersion = SQLPackageVersion (Name, Package, Commit)
 
 instance ToRow SQLPackageVersion where
-    toRow (SQLPackageVersion (name, version, VersionInfo { revision, description , nixpath, date })) =
+    toRow (SQLPackageVersion (name, Package { description, nixpkgsPath, version }, Commit hash date)) =
         [ SQLText $ fromName name
         , SQLText $ fromVersion version
-        , SQLText $ fromHash revision
+        , SQLText $ fromHash hash
         , nullable $ SQLText <$> description
-        , nullable $ SQLText . pack <$> nixpath
+        , nullable $ SQLText . pack <$> nixpkgsPath
         , SQLInteger $ fromInteger $ toModifiedJulianDay date
         ]
 
@@ -143,12 +141,11 @@ instance FromRow SQLPackageVersion where
             create name version revision description nixpath date =
                 SQLPackageVersion
                     ( Name name
-                    , Version version
-                    , VersionInfo
-                        { revision = Hash revision
+                    , Package
+                        { version = Version version
                         , description = description
-                        , nixpath = unpack <$> nixpath
-                        , date = ModifiedJulianDay $ fromInteger date
+                        , nixpkgsPath = unpack <$> nixpath
                         }
+                    , Commit (Hash revision) (ModifiedJulianDay $ fromInteger date)
                     )
 

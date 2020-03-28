@@ -1,7 +1,7 @@
 module DatabaseSpec (spec) where
 
 import Control.Exception (evaluate)
-import Nix.Versions.Database (PackageDB(..), VersionInfo(..))
+import Nix.Revision (Revision(..), Package(..))
 import Nix.Versions.Types (Hash(..), Version(..), Name(..), Commit(..))
 import System.IO.Temp (withSystemTempFile)
 import Test.Hspec (Spec, describe, it, shouldBe)
@@ -23,17 +23,19 @@ spec :: Spec
 spec = do
     describe "Database" $ do
         -- We can add the same thing over and over again and we won't get duplicates
-        it "Adding a package name is idempotent" $ do
+        it "Adding revisions is idempotent" $ do
             overDatabase $ \conn -> do
                 let pname = Name "my-package"
-                    vinfo = VersionInfo (Hash "hash") Nothing Nothing (ModifiedJulianDay 10)
-                    db = PackageDB $ HM.fromList [(pname, HM.fromList [(Version "1.0", vinfo )])]
+                    pkg   = Package Nothing (Version "1.0") Nothing
+                    commit = Commit (Hash "hash") (ModifiedJulianDay 10)
+                    revision = Revision commit $ HM.fromList [(pname, pkg)]
 
-                () <- P.persist conn db
+                () <- P.persist conn revision
                 v1 <- P.versions conn pname
-                () <- P.persist conn db
+                () <- P.persist conn revision
                 v2 <- P.versions conn pname
                 v1 `shouldBe` v2
+                length v1 `shouldBe` 1
 
 
 

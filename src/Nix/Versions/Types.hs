@@ -44,4 +44,4 @@ newtype Hash = Hash { fromHash :: Text }
 data Repo = Repo FilePath
 
 data Commit = Commit Hash Day
-    deriving (Show)
+    deriving (Show, Eq)
