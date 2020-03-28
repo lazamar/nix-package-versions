@@ -2,7 +2,7 @@
 Save and retrieving Database types from persistent storage
 -}
 
-module Nix.Versions.Database.Persistent
+module Nix.Versions.Database
     ( defaultDBFileName
     , connect
     , disconnect
