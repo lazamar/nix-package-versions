@@ -29,7 +29,7 @@ module Nix.Revision
 import Control.Exception (Exception(..), SomeException(..), throw, catch, tryJust)
 import Control.Concurrent.Async (mapConcurrently)
 import Control.Monad (unless, (<=<), join)
-import Control.Monad.Except (runExceptT, liftEither)
+import Control.Monad.Except (runExceptT, liftEither, MonadError)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Aeson (ToJSON, FromJSON, eitherDecodeFileStrict, parseJSON, withObject, (.:), (.:?), parseJSON)
 import Data.Bifunctor (bimap, first)
@@ -44,7 +44,7 @@ import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Data.Foldable (asum, find)
 import Data.Typeable (Typeable, cast)
 import GHC.Generics (Generic)
-import Nix.Cache (CacheT(..))
+import Nix.Cache (Cache(..))
 import Nix.Versions.Types (NixConfig(..), Config(..), Channel(..), Hash(..), Name, Version(..), Commit(..), Repo(..))
 import System.Directory (listDirectory)
 import System.Exit (ExitCode(..))
@@ -303,10 +303,23 @@ gheadAt repo day = runExceptT $ do
 
 --
 
-type CommitCache m = CacheT m Day Commit
+type CommitCache m = Cache m Day Commit
+
+instance (MonadIO m, NixConfig m) => Cache m Day Commit where
+    getCached day = do
+        config <- getConfig
+        files  <- liftIO $ listDirectory $ config_revisionsDir config
+        return $ find ((day ==) . commitDate) $ mapMaybe fileNameToCommit files
+        where
+            commitDate (Commit hash date) = date
+
+    getUncached day = liftIO $ gheadAt gnixpkgs day
+
+    -- TODO: Implement this
+    addToCache (key, value) = return ()
 
 
-type RevisionCache m = CacheT m Commit Revision
+type RevisionCache m = Cache m Commit Revision
 
 ext :: String
 ext = ".json"

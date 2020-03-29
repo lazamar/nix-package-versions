@@ -1,32 +1,32 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE TupleSections #-}
 
 {- A general purpose stateful cache.
 -}
 
 module Nix.Cache
-    ( CacheT(..)
+    ( Cache(..)
     ) where
 
 
--- | A transformer that adds caching capabilities to a monad
--- The goal is to avoid getting uncached values as much as possible.
-class Monad m => CacheT (m :: * -> *) key value | key -> value where
+-- | The goal is to avoid getting uncached values as much as possible.
+class Monad m => Cache (m :: * -> *) key value | key -> value where
     getCached   :: key -> m (Maybe value)
-    getUncached :: key -> m value
+    getUncached :: key -> m (Either String value)
 
     -- | Save a value to the cache
     addToCache  :: (key, value) -> m ()
 
     -- | Get a value from the cache if available
-    retrieve    :: key -> m value
+    retrieve    :: key -> m (Either String value)
     retrieve key = do
         res <- getCached key
         case res of
-          Just value -> return value
-          Nothing -> do
-              value <- getUncached key
-              addToCache (key, value)
-              return value
+            Just value -> return $ Right value
+            Nothing -> do
+                evalue <- getUncached key
+                either (const $ return ()) (addToCache . (key,)) evalue
+                return evalue
     {-# MINIMAL getCached, getUncached, addToCache #-}
 
