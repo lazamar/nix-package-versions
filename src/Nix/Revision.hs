@@ -14,6 +14,7 @@
 
 module Nix.Revision
     ( load
+    , headAt
     , Revision(..)
     , Package(..)
 
@@ -32,10 +33,11 @@ import Data.Either (isRight)
 import Data.HashMap.Strict (HashMap)
 import Data.Maybe (mapMaybe, listToMaybe)
 import Data.Text (pack, unpack, Text)
+import Data.Text.Encoding (encodeUtf8)
 import Data.Time.Calendar (Day, fromGregorian, toGregorian, showGregorian)
 import Data.Foldable ( find)
 import GHC.Generics (Generic)
-import Nix.Versions.Types (CachePath(..), NixConfig(..), Config(..), Hash(..), Name, Version(..), Commit(..))
+import Nix.Versions.Types (GitHubUser(..), CachePath(..), NixConfig(..), Config(..), Hash(..), Name, Version(..), Commit(..))
 import System.Directory (listDirectory)
 import System.Exit (ExitCode(..))
 import System.Posix.Files (fileExist, removeLink)
@@ -43,38 +45,6 @@ import System.Process (readCreateProcessWithExitCode, shell, CreateProcess(..))
 import Text.Read (readMaybe)
 
 import qualified Network.HTTP.Req as Req
-
--- | Download lists of packages and their versions
--- for commits between from date and to date.
--- Downloads one package list for each month in period.
-downloadVersionsInPeriod :: CachePath -> Day -> Day -> IO [Either (Day, String) (Commit, FilePath)]
-downloadVersionsInPeriod dir from to = do
-    commits <- mapMaybe eitherToMaybe <$> mapConcurrently (headAt dir gnixpkgs) dates
-    mapConcurrently (download <=< announce) commits
-    where
-        (fromYear, _, _) = toGregorian from
-
-        (toYear, _, _) = toGregorian to
-
-        -- One entry per month
-        dates
-            = takeWhile (<= to)
-            $ dropWhile (< from)
-            $ [fromGregorian year month 1
-              | year <- [fromYear .. toYear]
-              , month <- [1..12]
-              ]
-
-        announce (Commit hash date) = do
-            putStrLn $ "Downloading files for " <> showGregorian date
-            return (Commit hash date)
-
-        download commit@(Commit _ date) = do
-            result <- downloadFromNix dir commit
-            return $ bimap (date,) (commit,) result
-
-------------------------
-
 
 -- | The contents of a json file with package information
 data Revision = Revision
@@ -95,7 +65,8 @@ instance FromJSON Package where
        <*>  v .:  "version"
        <*> (v .: "meta" >>= (.:? "position"))
 
-----------------------------
+-------------------------------------------------------------------------------
+-- Saving and loading revision files
 
 load :: CachePath -> Commit -> IO (Either String Revision)
 load dir commit = do
@@ -199,7 +170,7 @@ eitherToMaybe :: Either a b -> Maybe b
 eitherToMaybe = either (const Nothing) Just
 
 
-----------------------------------------------------------------
+-------------------------------------------------------------------------------
 -- GitHub
 
 gnixpkgs :: GitHubRepo
@@ -235,8 +206,8 @@ commitUrl (GitHubRepo user repo) (Commit (Hash hash) date)
     = unpack $ "https://github.com/" <> user <> "/" <> repo <> "/archive/" <> hash <> ".tar.gz"
 
 -- | Fetch the commit that was the HEAD at 00 hours on the specified day
-headAt :: CachePath -> GitHubRepo -> Day -> IO (Either String Commit)
-headAt dir repo day = headCached >>= maybe headFromGithub (return . Right)
+headAt :: CachePath -> GitHubUser -> Day -> IO (Either String Commit)
+headAt dir (GitHubUser guser) day = headCached >>= maybe headFromGithub (return . Right)
     where
         headCached = find ((day ==) . commitDate) <$> cachedRevisions dir
 
@@ -253,14 +224,14 @@ headAt dir repo day = headCached >>= maybe headFromGithub (return . Right)
                 $ Req.responseBody response
 
         options =
-            Req.header "User-Agent" "lazamar"
+            Req.header "User-Agent" (encodeUtf8 guser)
             <>
-            Req.queryParam "until" (Just $ pack $ showGregorian day <> "T00:00:00Z")
+            Req.queryParam "until" (Just $ showGregorian day <> "T00:00:00Z")
 
         url = Req.https "api.github.com"
             Req./: "repos"
-            Req./: g_user repo
-            Req./: g_repo repo
+            Req./: g_user gnixpkgs
+            Req./: g_repo gnixpkgs
             Req./: "commits"
 
         isHttpException :: Req.HttpException -> Maybe String

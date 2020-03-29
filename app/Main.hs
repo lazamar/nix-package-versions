@@ -13,7 +13,7 @@ import Data.Time.Calendar (Day, fromGregorian, toGregorian, showGregorian)
 import Data.Text (pack)
 import Nix.Revision (load)
 import System.TimeIt (timeItNamed)
-import Nix.Versions.Types (CachePath(..), Config(..), Channel(..), Name(..), Hash(..), Commit(..))
+import Nix.Versions.Types (DBFile(..),GitHubUser(..), CachePath(..), Config(..), Channel(..), Name(..), Hash(..), Commit(..))
 import Text.Parsec (parse)
 
 import qualified Data.HashMap.Strict as H
@@ -25,9 +25,9 @@ import qualified Nix.Versions as V
 
 config :: Config
 config = Config
-    { config_databaseFile   = "./saved-versions/database"
+    { config_databaseFile   = DBFile "SQL_DATABASE.db"
     , config_cacheDirectory = CachePath "./saved-versions"
-    , config_gitHubUser     = "lazamar"
+    , config_gitHubUser     = GitHubUser "lazamar"
     }
 
 from :: Day
@@ -38,7 +38,7 @@ to = read "2019-02-01"
 
 main :: IO ()
 main = do
-    conn <- Persistent.connect Persistent.defaultDBFileName
+    conn <- Persistent.connect (config_cacheDirectory config) (config_databaseFile config)
     res <- Persistent.versions conn (Name "haskellPackages.hlint")
     showVersions res
 

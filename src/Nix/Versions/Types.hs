@@ -14,6 +14,8 @@ module Nix.Versions.Types
     , NixConfig(..)
     , Config(..)
     , CachePath(..)
+    , GitHubUser(..)
+    , DBFile(..)
     ) where
 
 import Data.Aeson (FromJSON, FromJSONKey, ToJSON, ToJSONKey)
@@ -24,10 +26,14 @@ import Data.Monoid (Monoid)
 import GHC.Generics (Generic)
 
 data Config = Config
-    { config_databaseFile   :: Text
+    { config_databaseFile   :: DBFile
     , config_cacheDirectory :: CachePath
-    , config_gitHubUser     :: Text
+    , config_gitHubUser     :: GitHubUser
     }
+
+newtype DBFile = DBFile String
+
+newtype GitHubUser = GitHubUser Text
 
 newtype CachePath = CachePath FilePath
 
