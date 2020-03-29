@@ -6,13 +6,15 @@ module Nix.Versions
     ) where
 
 import Control.Concurrent.Async (mapConcurrently)
+import Control.Monad.Except (liftIO, liftEither, runExceptT, runExcept)
+import Control.Monad (join)
 import Data.Time.Calendar (Day, fromGregorian, toGregorian, showGregorian)
 import Data.Either (partitionEithers)
 import Data.Aeson (encodeFile, eitherDecodeFileStrict)
 import Nix.Versions.Types (CachePath, Commit(..), Config(..))
 import Data.Maybe (mapMaybe)
 import Data.Bifunctor (first)
-import Control.Monad ((<=<))
+import Control.Monad ((<=<), (>>))
 import Nix.Versions.Database as DB
 
 import qualified Nix.Revision as Revision
@@ -22,12 +24,23 @@ import qualified Nix.Revision as Revision
 -- the database.
 savePackageVersionsForPeriod :: Config -> Day -> Day -> IO [Either (Day, String) Commit]
 savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to = do
-    commits <- mapMaybe eitherToMaybe <$> mapConcurrently (Revision.headAt cacheDir gitUser) dates
     conn <- DB.connect cacheDir dbFile
-    res <- mapConcurrently (save conn <=< download <=< announce) commits
+    res <- mapConcurrently (f conn) dates
     DB.disconnect conn
     return res
     where
+        f conn date = do
+            eCommits <- Revision.commitsAt cacheDir gitUser date
+            case eCommits of
+                Left err -> return $ Left (date, err)
+                Right coms ->
+                    -- We will try only a few commits. If they don't succeed we give up on that revision.
+                    let commits = take 4 coms
+                    in
+                    tryInSequence (date, "Unable to create dervation after " <> show (length commits) <> " attempts.")
+                        $ fmap (save conn <=< download <=< announce)
+                        $ zip [1..] commits
+
         (fromYear, _, _) = toGregorian from
 
         (toYear, _, _) = toGregorian to
@@ -41,8 +54,8 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to = do
               , month <- [1..12]
               ]
 
-        announce (Commit hash date) = do
-            putStrLn $ "Downloading files for " <> showGregorian date
+        announce (tryCount, Commit hash date) = do
+            putStrLn $ "Attempt " <> show tryCount <> ". Downloading files for " <> showGregorian date
             return (Commit hash date)
 
         download commit@(Commit _ date) = first (date,) <$> Revision.load cacheDir commit
@@ -53,4 +66,8 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to = do
            return $ Right $ Revision.commit rev
 
         eitherToMaybe = either (const Nothing) Just
+
+tryInSequence :: Show e => e -> [IO (Either e a)] -> IO (Either e a)
+tryInSequence err []     = return $ Left err
+tryInSequence err (x:xs) = x >>= either (\e -> print e >> tryInSequence err xs) (return . Right)
 

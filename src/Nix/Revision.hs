@@ -14,7 +14,7 @@
 
 module Nix.Revision
     ( load
-    , headAt
+    , commitsAt
     , Revision(..)
     , Package(..)
 
@@ -22,7 +22,7 @@ module Nix.Revision
     , fileNameToCommit
     ) where
 
-import Control.Exception (SomeException(..), catch, tryJust)
+import Control.Exception (SomeException(..), catch, tryJust, onException)
 import Control.Concurrent.Async (mapConcurrently)
 import Control.Monad (unless, (<=<), join)
 import Control.Monad.Except (runExceptT, liftEither)
@@ -30,6 +30,7 @@ import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Aeson (FromJSON, eitherDecodeFileStrict, parseJSON, withObject, (.:), (.:?), parseJSON)
 import Data.Bifunctor (bimap)
 import Data.Either (isRight)
+import Data.List (partition)
 import Data.HashMap.Strict (HashMap)
 import Data.Maybe (mapMaybe, listToMaybe)
 import Data.Text (pack, unpack, Text)
@@ -102,12 +103,12 @@ loadFromNixpkgs dir commit = do
 
 -- | Get JSON version information from nixos.org
 downloadFromNix :: CachePath -> Commit -> IO (Either String FilePath)
-downloadFromNix dir commit = const (return $ Left $ command $ path)$ do
+downloadFromNix dir commit = do
     fileAlreadyThere <- fileExist path
     if fileAlreadyThere
        then return (return path)
        else do
-           result <- downloadNixVersionsTo path
+           result <- downloadNixVersionsTo path `onException` delete path
            unless (isRight result) (delete path)
            return result
     where
@@ -184,8 +185,9 @@ data GitHubRepo = GitHubRepo
     , g_repo :: Text
     }
 
-newtype GitHubCommit = GitHubCommit
-    { unGitHubCommit :: Commit
+data GitHubCommit = GitHubCommit
+    { g_verified :: Bool
+    , g_commit :: Commit
     }
 
 instance FromJSON GitHubCommit where
@@ -193,8 +195,9 @@ instance FromJSON GitHubCommit where
         handle
         <$> (v .: "sha")
         <*> (v .: "commit" >>= (.: "committer") >>= (.: "date"))
+        <*> (v .: "commit" >>= (.: "verification") >>= (.: "verified"))
        where
-           handle sha date = GitHubCommit $ Commit (Hash sha) (readGregorian date)
+           handle sha date verified = GitHubCommit verified $ Commit (Hash sha) (readGregorian date)
 
            readGregorian :: String -> Day
            readGregorian = read . take 10
@@ -205,23 +208,30 @@ commitUrl :: GitHubRepo -> Commit -> Url
 commitUrl (GitHubRepo user repo) (Commit (Hash hash) date)
     = unpack $ "https://github.com/" <> user <> "/" <> repo <> "/archive/" <> hash <> ".tar.gz"
 
--- | Fetch the commit that was the HEAD at 00 hours on the specified day
-headAt :: CachePath -> GitHubUser -> Day -> IO (Either String Commit)
-headAt dir (GitHubUser guser) day = headCached >>= maybe headFromGithub (return . Right)
+-- | Fetch the the last commits at 00 hours on the specified day
+-- Verified commits appear earlier in the list
+commitsAt :: CachePath -> GitHubUser -> Day -> IO (Either String [Commit])
+commitsAt dir (GitHubUser guser) day = headCached >>= maybe headFromGithub (return . Right)
     where
-        headCached = find ((day ==) . commitDate) <$> cachedRevisions dir
+        headCached = (fmap pure . find ((day ==) . commitDate)) <$> cachedRevisions dir
 
         commitDate (Commit _ date) = date
 
-        headFromGithub = runExceptT $ do
-            response <- catching  isHttpException
+        headFromGithub = do
+            response <-
+                tryJust isHttpException
+                $ fmap Req.responseBody
+                $ Req.runReq Req.defaultHttpConfig
                 $ Req.req Req.GET url Req.NoReqBody Req.jsonResponse options
 
-            liftEither
-                $ maybe (Left "Received empty commit list from remote") Right
-                $ fmap unGitHubCommit
-                $ listToMaybe
-                $ Req.responseBody response
+            return $ either Left (Right . fmap g_commit . rearrange) response
+
+        -- | Move verified commits to the top, so that they may
+        -- be used first.
+        -- Some commits don't build successfully, the prioritisation of
+        -- verified commits tries to mitigate that problem.
+        rearrange :: [GitHubCommit] -> [GitHubCommit]
+        rearrange = ((++) <$> fst <*> snd) . partition g_verified
 
         options =
             Req.header "User-Agent" (encodeUtf8 guser)
@@ -241,7 +251,5 @@ headAt dir (GitHubUser guser) day = headCached >>= maybe headFromGithub (return 
             = join
             . liftIO
             . fmap liftEither
-            . tryJust exc
-            . Req.runReq Req.defaultHttpConfig
 
 
