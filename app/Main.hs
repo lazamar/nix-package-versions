@@ -15,6 +15,7 @@ import Nix.Revision (load)
 import System.TimeIt (timeItNamed)
 import Nix.Versions.Types (DBFile(..),GitHubUser(..), CachePath(..), Config(..), Channel(..), Name(..), Hash(..), Commit(..))
 import Text.Parsec (parse)
+import Control.Monad (mapM_)
 
 import qualified Data.HashMap.Strict as H
 import qualified Nix.Revision as Revision
@@ -31,13 +32,17 @@ config = Config
     }
 
 from :: Day
-from = read "2014-01-01"
+from = read "2019-11-01"
 
 to :: Day
-to = read "2019-02-01"
+to = read "2020-02-01"
 
 main :: IO ()
 main = do
+    result <- V.savePackageVersionsForPeriod config from to
+    mapM_ print result
+
+findVersion = do
     conn <- Persistent.connect (config_cacheDirectory config) (config_databaseFile config)
     res <- Persistent.versions conn (Name "haskellPackages.hlint")
     showVersions res

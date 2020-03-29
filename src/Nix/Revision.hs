@@ -102,7 +102,7 @@ loadFromNixpkgs dir commit = do
 
 -- | Get JSON version information from nixos.org
 downloadFromNix :: CachePath -> Commit -> IO (Either String FilePath)
-downloadFromNix dir commit = do
+downloadFromNix dir commit = const (return $ Left $ command $ path)$ do
     fileAlreadyThere <- fileExist path
     if fileAlreadyThere
        then return (return path)
