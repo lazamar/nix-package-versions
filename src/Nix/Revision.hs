@@ -131,7 +131,7 @@ loadFromNixpkgs dir commit = do
 
 -- | Get JSON version information from nixos.org
 downloadFromNix :: CachePath -> Commit -> IO (Either String FilePath)
-downloadFromNix dir (Commit hash day) = do
+downloadFromNix dir commit = do
     fileAlreadyThere <- fileExist path
     if fileAlreadyThere
        then return (return path)
@@ -140,7 +140,7 @@ downloadFromNix dir (Commit hash day) = do
            unless (isRight result) (delete path)
            return result
     where
-        path = filePath dir (Commit hash day)
+        path = filePath dir commit
 
         delete = removeLink
 
@@ -150,7 +150,7 @@ downloadFromNix dir (Commit hash day) = do
         -- them at destination
         command destination =
                 "nix-env -qaP --json -f "
-                <> revisionUrl hash
+                <> commitUrl gnixpkgs commit
                 <> " --arg config '" <> config <> "'"
                 <> " >" <> destination
 
@@ -169,6 +169,17 @@ downloadFromNix dir (Commit hash day) = do
             , "}"
             ]
 
+        run :: CreateProcess -> IO (Either String String)
+        run cmd = do
+            (exitCode, stdOut, stdErr) <- readCreateProcessWithExitCode cmd ""
+            return $ case exitCode of
+              ExitSuccess   -> Right stdOut
+              ExitFailure _ -> Left stdErr
+
+-- | Get the place where a JSON file with package versions should be saved.
+filePath :: CachePath -> Commit -> FilePath
+filePath (CachePath dir) commit = dir <> "/" <> commitToFileName commit
+
 ext :: String
 ext = ".json"
 
@@ -184,25 +195,8 @@ fileNameToCommit  fname = Commit hash <$> readMaybe (take 10 fname)
         dropTail n s = reverse $ drop n $ reverse s
 
 
-run :: CreateProcess -> IO (Either String String)
-run cmd = do
-    (exitCode, stdOut, stdErr) <- readCreateProcessWithExitCode cmd ""
-    return $ case exitCode of
-      ExitSuccess   -> Right stdOut
-      ExitFailure _ -> Left stdErr
-
-
 eitherToMaybe :: Either a b -> Maybe b
 eitherToMaybe = either (const Nothing) Just
-
--- | Get the place where a JSON file with package versions should be saved.
-filePath :: CachePath -> Commit -> FilePath
-filePath (CachePath dir) commit = dir <> "/" <> commitToFileName commit
-
-type Url = String
-
-revisionUrl :: Hash -> Url
-revisionUrl (Hash hash) = "https://github.com/NixOS/nixpkgs/archive/" <> unpack hash <> ".tar.gz"
 
 
 ----------------------------------------------------------------
@@ -234,11 +228,19 @@ instance FromJSON GitHubCommit where
            readGregorian :: String -> Day
            readGregorian = read . take 10
 
--- | Fetch the commit that was the HEAD at 0 hours on the specified day
+type Url = String
+
+commitUrl :: GitHubRepo -> Commit -> Url
+commitUrl (GitHubRepo user repo) (Commit (Hash hash) date)
+    = unpack $ "https://github.com/" <> user <> "/" <> repo <> "/archive/" <> hash <> ".tar.gz"
+
+-- | Fetch the commit that was the HEAD at 00 hours on the specified day
 headAt :: CachePath -> GitHubRepo -> Day -> IO (Either String Commit)
 headAt dir repo day = headCached >>= maybe headFromGithub (return . Right)
     where
         headCached = find ((day ==) . commitDate) <$> cachedRevisions dir
+
+        commitDate (Commit _ date) = date
 
         headFromGithub = runExceptT $ do
             response <- catching  isHttpException
@@ -271,5 +273,4 @@ headAt dir repo day = headCached >>= maybe headFromGithub (return . Right)
             . tryJust exc
             . Req.runReq Req.defaultHttpConfig
 
-commitDate :: Commit -> Day
-commitDate (Commit _ date) = date
+
