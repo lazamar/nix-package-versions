@@ -6,6 +6,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 {-| This module retrieves and parses information about Nix revisions.
    Revisions are available at https://nixos.org/nixos/packages
@@ -258,17 +259,15 @@ gheadAt repo day = runExceptT $ do
 
 type CommitCache m = Cache m Day Commit
 
-instance (MonadIO m, NixConfig m) => Cache m Day Commit where
-    getCached day = do
-        config <- getConfig
-        files  <- liftIO $ listDirectory $ config_revisionsDir config
-        return $ find ((day ==) . commitDate) $ mapMaybe fileNameToCommit files
-        where
-            commitDate (Commit hash date) = date
+instance (MonadIO m, NixConfig m, RevisionCache m) => Cache m Day Commit where
+    getCached day = find ((day ==) . commitDate) <$> cachedKeys
 
     getUncached day = liftIO $ gheadAt gnixpkgs day
 
-    cachedKeys = return []
+    cachedKeys = fmap commitDate <$> cachedKeys
+
+commitDate :: Commit -> Day
+commitDate (Commit hash date) = date
 
 
 ext :: String
@@ -292,7 +291,7 @@ instance (MonadIO m, NixConfig m) => Cache m Commit Revision where
         Config { config_revisionsDir } <- getConfig
         keys <- cachedKeys
         if elem commit keys
-           then liftIO $ either (const Nothing) Just <$> load config_revisionsDir commit
+           then liftIO $ eitherToMaybe <$> load config_revisionsDir commit
            else return Nothing
 
     getUncached commit = do
