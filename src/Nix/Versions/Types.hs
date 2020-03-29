@@ -13,21 +13,23 @@ module Nix.Versions.Types
     , Commit(..)
     , NixConfig(..)
     , Config(..)
+    , CachePath(..)
     ) where
 
 import Data.Aeson (FromJSON, FromJSONKey, ToJSON, ToJSONKey)
 import Data.Hashable (Hashable)
-import Data.HashMap.Strict (HashMap)
 import Data.Text (Text)
 import Data.Time.Calendar (Day)
 import Data.Monoid (Monoid)
 import GHC.Generics (Generic)
 
 data Config = Config
-    { config_databaseFile :: Text
-    , config_revisionsDir :: FilePath
-    , config_gitHubUser   :: Text
+    { config_databaseFile   :: Text
+    , config_cacheDirectory :: CachePath
+    , config_gitHubUser     :: Text
     }
+
+newtype CachePath = CachePath FilePath
 
 class NixConfig m where
     getConfig :: m Config

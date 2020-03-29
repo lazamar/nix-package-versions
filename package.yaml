@@ -48,8 +48,8 @@ library:
     OverloadedStrings
     NamedFieldPuns
 
-  ghc-options:
-  - -Wall
+  # ghc-options:
+  #- -Wall
 
 executables:
   nix-package-versions-exe:

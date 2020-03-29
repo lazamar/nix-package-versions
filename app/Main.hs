@@ -11,9 +11,9 @@ import Data.List (intersperse, sortBy)
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Time.Calendar (Day, fromGregorian, toGregorian, showGregorian)
 import Data.Text (pack)
-import Nix.Revision (nixpkgs, headAt, downloadVersionsInPeriod, downloadFromNix)
+import Nix.Revision (load)
 import System.TimeIt (timeItNamed)
-import Nix.Versions.Types (Channel(..), Name(..), Hash(..), Commit(..))
+import Nix.Versions.Types (CachePath(..), Config(..), Channel(..), Name(..), Hash(..), Commit(..))
 import Text.Parsec (parse)
 
 import qualified Data.HashMap.Strict as H
@@ -22,6 +22,13 @@ import qualified Nix.Versions.Database as Persistent
 
 import qualified Nix.Versions.Parsers as Parsers
 import qualified Nix.Versions as V
+
+config :: Config
+config = Config
+    { config_databaseFile   = "./saved-versions/database"
+    , config_cacheDirectory = CachePath "./saved-versions"
+    , config_gitHubUser     = "lazamar"
+    }
 
 from :: Day
 from = read "2014-01-01"
@@ -40,18 +47,3 @@ getName = Name . pack <$> getLine
 
 showVersions :: Show a => [a] -> IO ()
 showVersions = putStrLn . unlines . fmap show
-
-commitsBetween :: Day -> Day -> IO [Commit]
-commitsBetween from to = mapMaybe id <$> mapConcurrently (headAt nixpkgs) dates
-    where
-        (fromYear, _, _) = toGregorian from
-
-        (toYear, _, _) = toGregorian to
-
-        dates
-            = takeWhile (<= to)
-            $ dropWhile (< from)
-            $ [fromGregorian year month 1
-              | year <- [fromYear .. toYear]
-              , month <- [1..12]
-              ]
