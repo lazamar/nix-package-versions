@@ -87,8 +87,8 @@ instance FromJSON Package where
 -- | Download lists of packages and their versions
 -- for commits between from date and to date.
 -- Downloads one package list for each month in period.
-downloadVersionsInPeriod :: Day -> Day -> IO [Either (Day, String) (Commit, FilePath)]
-downloadVersionsInPeriod from to = do
+downloadVersionsInPeriod :: FilePath -> Day -> Day -> IO [Either (Day, String) (Commit, FilePath)]
+downloadVersionsInPeriod dir from to = do
     commits <- mapMaybe id <$> mapConcurrently (headAt nixpkgs) dates
     mapConcurrently (download <=< announce) commits
     where
@@ -109,60 +109,13 @@ downloadVersionsInPeriod from to = do
             return (Commit hash date)
 
         download commit@(Commit _ date) = do
-            result <- downloadFromNix commit
+            result <- downloadFromNix dir commit
             return $ bimap (date,) (commit,) result
 
--- | Get JSON version information from nixos.org
-downloadFromNix :: Commit -> IO (Either String FilePath)
-downloadFromNix (Commit hash day) = do
-    fileAlreadyThere <- fileExist path
-    if fileAlreadyThere
-       then return (return path)
-       else do
-           result <- downloadNixVersionsTo path
-           unless (isRight result) (delete path)
-           return result
-    where
-        path = filePath RawNixVersions (Commit hash day)
-
-        delete = removeLink
-
-        downloadNixVersionsTo = run . shell . command
-
-        -- | download package versions as JSON and save
-        -- them at destination
-        command destination =
-                "nix-env -qaP --json -f "
-                <> revisionUrl hash
-                <> " --arg config '" <> config <> "'"
-                <> " >" <> destination
-
-        -- | Configuration to make sure that all packages show up in the JSON
-        config = mconcat
-            [ "{"
-               --Ensures no aliases are in the results.
-            , "  allowAliases = false;"
-            --  Enable recursion into attribute sets that nix-env normally
-            --  doesn't look into so that we can get a more complete picture
-            --  of the available packages for the purposes of the index.
-            , "  packageOverrides = super: {"
-            , "    haskellPackages = super.recurseIntoAttrs super.haskellPackages;"
-            , "    rPackages = super.recurseIntoAttrs super.rPackages;"
-            , "  };"
-            , "}"
-            ]
 
 -------------------------------------------
 -- Loading packages
 
--- | Load package info from a commit that is already saved locally
-load :: Commit -> IO (Either String Revision)
-load commit = do
-    packages <-
-        catch
-            (eitherDecodeFileStrict $ filePath RawNixVersions commit)
-            (\(SomeException err) -> return $ Left $ show err)
-    return $ Revision commit <$> packages
 
 data FileType
     = RawNixVersions
@@ -175,8 +128,8 @@ nixpkgs = Repo "../nixpkgs"
 c_DOWNLOADS_DIRECTORY = "./saved-versions"
 --
 -- | Get the place where a JSON file with package versions should be saved.
-filePath :: FileType -> Commit -> FilePath
-filePath fileType (Commit (Hash hash) day) = c_DOWNLOADS_DIRECTORY <> "/" <> name
+filePath :: FilePath -> FileType -> Commit -> FilePath
+filePath dir fileType (Commit (Hash hash) day) = dir <> "/" <> name
     where
         name = showGregorian day <> "-" <> unpack hash <> "-" <> suffix fileType <> ".json"
 
@@ -315,11 +268,8 @@ instance (MonadIO m, NixConfig m) => Cache m Day Commit where
 
     getUncached day = liftIO $ gheadAt gnixpkgs day
 
-    -- TODO: Implement this
-    addToCache (key, value) = return ()
+    cachedKeys = return []
 
-
-type RevisionCache m = Cache m Commit Revision
 
 ext :: String
 ext = ".json"
@@ -335,3 +285,72 @@ fileNameToCommit  fname = Commit hash <$> readMaybe (take 10 fname)
 
         dropTail n s = reverse $ drop n $ reverse s
 
+type RevisionCache m = Cache m Commit Revision
+
+instance (MonadIO m, NixConfig m) => Cache m Commit Revision where
+    getCached commit = do
+        Config { config_revisionsDir } <- getConfig
+        keys <- cachedKeys
+        if elem commit keys
+           then liftIO $ either (const Nothing) Just <$> load config_revisionsDir commit
+           else return Nothing
+
+    getUncached commit = do
+        Config { config_revisionsDir } <- getConfig
+        res <- liftIO $ downloadFromNix config_revisionsDir commit
+        case res of
+            Left err -> return $ Left err
+            Right _  -> liftIO $ load config_revisionsDir commit
+
+    cachedKeys = do
+        config <- getConfig
+        files  <- liftIO $ listDirectory $ config_revisionsDir config
+        return $ mapMaybe fileNameToCommit files
+
+-- | Load package info from a commit that is already saved locally
+load :: FilePath -> Commit -> IO (Either String Revision)
+load dir commit = do
+    packages <-
+        catch (eitherDecodeFileStrict $ filePath dir RawNixVersions commit)
+            (\(SomeException err) -> return $ Left $ show err)
+    return $ Revision commit <$> packages
+
+-- | Get JSON version information from nixos.org
+downloadFromNix :: FilePath -> Commit -> IO (Either String FilePath)
+downloadFromNix dir (Commit hash day) = do
+    fileAlreadyThere <- fileExist path
+    if fileAlreadyThere
+       then return (return path)
+       else do
+           result <- downloadNixVersionsTo path
+           unless (isRight result) (delete path)
+           return result
+    where
+        path = filePath dir RawNixVersions (Commit hash day)
+
+        delete = removeLink
+
+        downloadNixVersionsTo = run . shell . command
+
+        -- | download package versions as JSON and save
+        -- them at destination
+        command destination =
+                "nix-env -qaP --json -f "
+                <> revisionUrl hash
+                <> " --arg config '" <> config <> "'"
+                <> " >" <> destination
+
+        -- | Configuration to make sure that all packages show up in the JSON
+        config = mconcat
+            [ "{"
+               --Ensures no aliases are in the results.
+            , "  allowAliases = false;"
+            --  Enable recursion into attribute sets that nix-env normally
+            --  doesn't look into so that we can get a more complete picture
+            --  of the available packages for the purposes of the index.
+            , "  packageOverrides = super: {"
+            , "    haskellPackages = super.recurseIntoAttrs super.haskellPackages;"
+            , "    rPackages = super.recurseIntoAttrs super.rPackages;"
+            , "  };"
+            , "}"
+            ]

@@ -48,6 +48,9 @@ library:
     OverloadedStrings
     NamedFieldPuns
 
+  ghc-options:
+  - -Wall
+
 executables:
   nix-package-versions-exe:
     main:                Main.hs
