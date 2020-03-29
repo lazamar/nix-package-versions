@@ -6,7 +6,7 @@ import Nix.Versions.Types (Hash(..), Version(..), Name(..), Commit(..))
 import System.IO.Temp (withSystemTempFile)
 import Test.Hspec (Spec, describe, it, shouldBe)
 import qualified Data.HashMap.Strict as HM
-import qualified Nix.Versions.Database.Persistent as P
+import qualified Nix.Versions.Database as P
 import Data.Text (pack)
 import Data.Time.Calendar (Day(ModifiedJulianDay))
 import Control.Exception (bracket)

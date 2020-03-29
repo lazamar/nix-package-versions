@@ -11,6 +11,8 @@ module Nix.Versions.Types
     , Channel(..)
     , Repo(..)
     , Commit(..)
+    , NixConfig(..)
+    , Config(..)
     ) where
 
 import Data.Aeson (FromJSON, FromJSONKey, ToJSON, ToJSONKey)
@@ -20,6 +22,15 @@ import Data.Text (Text)
 import Data.Time.Calendar (Day)
 import Data.Monoid (Monoid)
 import GHC.Generics (Generic)
+
+data Config = Config
+    { config_databaseFile :: Text
+    , config_revisionsDir :: FilePath
+    , config_gitHubUser   :: Text
+    }
+
+class NixConfig m where
+    getConfig :: m Config
 
 data Channel
     = NixOS Version

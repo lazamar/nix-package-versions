@@ -2,6 +2,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 {-| This module retrieves and parses information about Nix revisions.
    Revisions are available at https://nixos.org/nixos/packages
@@ -15,6 +19,9 @@ module Nix.Revision
     , load
     , gheadAt
     , gnixpkgs
+
+    , commitToFileName
+    , fileNameToCommit
     , Revision(..)
     , Package(..)
     ) where
@@ -34,10 +41,12 @@ import Data.Text (pack, unpack, Text)
 import Data.Time.Calendar (Day, fromGregorian, toGregorian, showGregorian)
 import Data.Time.Clock (UTCTime(..))
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
-import Data.Foldable (asum)
+import Data.Foldable (asum, find)
 import Data.Typeable (Typeable, cast)
 import GHC.Generics (Generic)
-import Nix.Versions.Types (Channel(..), Hash(..), Name, Version(..), Commit(..), Repo(..))
+import Nix.Cache (CacheT(..))
+import Nix.Versions.Types (NixConfig(..), Config(..), Channel(..), Hash(..), Name, Version(..), Commit(..), Repo(..))
+import System.Directory (listDirectory)
 import System.Exit (ExitCode(..))
 import System.Posix.Files (fileExist, removeLink)
 import System.Process (readCreateProcessWithExitCode, shell, CreateProcess(..))
@@ -47,6 +56,33 @@ import Text.Read (readMaybe)
 import qualified Network.HTTP.Req as Req
 import qualified Nix.Versions.Parsers as Parsers
 
+-- | The contents of a json file with package information
+data Revision = Revision
+    { commit :: Commit
+    , packages :: HashMap Name Package
+    } deriving (Generic)
+
+-- | The information we have about a nix package in one revision
+data Package = Package
+    { description :: Maybe Text
+    , version :: Version
+    , nixpkgsPath :: Maybe FilePath
+    } deriving (Show, Generic, Eq)
+
+instance FromJSON Package where
+    parseJSON = withObject "Package" $ \v -> Package
+       <$> (v .: "meta" >>= (.:? "description"))
+       <*>  v .:  "version"
+       <*> (v .: "meta" >>= (.:? "position"))
+       where
+        -- | take some/path:123 and return some/path
+        removeLineNumber :: FilePath -> FilePath
+        removeLineNumber rawPath =
+            case parse Parsers.filePath "Remove line number" rawPath of
+                Left _  -> rawPath
+                Right f -> f
+
+--
 
 -- | Download lists of packages and their versions
 -- for commits between from date and to date.
@@ -153,30 +189,6 @@ type Url = String
 revisionUrl :: Hash -> Url
 revisionUrl (Hash hash) = "https://github.com/NixOS/nixpkgs/archive/" <> unpack hash <> ".tar.gz"
 
--- | The contents of a json file with package information
-data Revision = Revision
-    { commit :: Commit
-    , packages :: HashMap Name Package
-    } deriving (Generic)
-
-data Package = Package
-    { description :: Maybe Text
-    , version :: Version
-    , nixpkgsPath :: Maybe FilePath
-    } deriving (Show, Generic, Eq)
-
-instance FromJSON Package where
-    parseJSON = withObject "Package" $ \v -> Package
-       <$> (v .: "meta" >>= (.:? "description"))
-       <*>  v .:  "version"
-       <*> (v .: "meta" >>= (.:? "position"))
-       where
-        -- | take some/path:123 and return some/path
-        removeLineNumber :: FilePath -> FilePath
-        removeLineNumber rawPath =
-            case parse Parsers.filePath "Remove line number" rawPath of
-                Left _  -> rawPath
-                Right f -> f
 
 -- Exceptions
 
@@ -288,4 +300,25 @@ gheadAt repo day = runExceptT $ do
             . fmap liftEither
             . tryJust exc
             . Req.runReq Req.defaultHttpConfig
+
+--
+
+type CommitCache m = CacheT m Day Commit
+
+
+type RevisionCache m = CacheT m Commit Revision
+
+ext :: String
+ext = ".json"
+
+commitToFileName :: Commit -> String
+commitToFileName  (Commit (Hash hash) date) =
+    showGregorian date <> "-" <> unpack hash <> ext
+
+fileNameToCommit :: String -> Maybe (Commit)
+fileNameToCommit  fname = Commit hash <$> readMaybe (take 10 fname)
+    where
+        hash = Hash $ pack $ dropTail (length ext) $ drop 11 fname
+
+        dropTail n s = reverse $ drop n $ reverse s
 

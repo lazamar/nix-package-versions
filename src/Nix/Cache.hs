@@ -28,4 +28,5 @@ class Monad m => CacheT (m :: * -> *) key value | key -> value where
               value <- getUncached key
               addToCache (key, value)
               return value
+    {-# MINIMAL getCached, getUncached, addToCache #-}
 
