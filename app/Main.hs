@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Main (main) where
+module Main (main, config) where
 
 import Control.Monad (forever)
 import Control.Concurrent.Async (mapConcurrently)
@@ -11,7 +11,6 @@ import Data.List (intersperse, sortBy)
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Time.Calendar (Day, fromGregorian, toGregorian, showGregorian)
 import Data.Text (pack)
-import Nix.Revision (load)
 import System.TimeIt (timeItNamed)
 import Nix.Versions.Types (DBFile(..),GitHubUser(..), CachePath(..), Config(..), Channel(..), Name(..), Hash(..), Commit(..))
 import Text.Parsec (parse)
@@ -32,10 +31,10 @@ config = Config
     }
 
 from :: Day
-from = read "2019-11-01"
+from = read "2019-01-31"
 
 to :: Day
-to = read "2020-02-01"
+to = read "2019-02-01"
 
 main :: IO ()
 main = do

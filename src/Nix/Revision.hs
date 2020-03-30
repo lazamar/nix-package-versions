@@ -13,7 +13,8 @@
 -}
 
 module Nix.Revision
-    ( load
+    ( loadCached
+    , loadFromNixpkgs
     , commitsAt
     , Revision(..)
     , Package(..)
@@ -51,7 +52,7 @@ import qualified Network.HTTP.Req as Req
 data Revision = Revision
     { commit :: Commit
     , packages :: HashMap Name Package
-    } deriving (Generic)
+    } deriving (Show, Generic)
 
 -- | The information we have about a nix package in one revision
 data Package = Package
@@ -69,13 +70,6 @@ instance FromJSON Package where
 -------------------------------------------------------------------------------
 -- Saving and loading revision files
 
-load :: CachePath -> Commit -> IO (Either String Revision)
-load dir commit = do
-    cached <- loadCached dir commit
-    case cached of
-      Just val -> return $ Right val
-      Nothing  -> loadFromNixpkgs dir commit
-
 -- | List of revision commits saved locally
 cachedRevisions :: CachePath -> IO [Commit]
 cachedRevisions (CachePath dir) = do
@@ -88,18 +82,22 @@ loadCached dir commit = do
     cached <- cachedRevisions dir
     if not (elem commit cached)
        then return Nothing
-       else do
-            packages <- catch
-                    (eitherDecodeFileStrict $ filePath dir commit)
-                    (\(SomeException err) -> return $ Left $ show err)
-            return $ eitherToMaybe $ Revision commit <$> packages
+       else eitherToMaybe <$> loadFromJson dir commit
 
 loadFromNixpkgs :: CachePath -> Commit -> IO (Either String Revision)
 loadFromNixpkgs dir commit = do
     res <- downloadFromNix dir commit
     case res of
         Left err -> return $ Left err
-        Right _  -> load dir commit
+        Right _  -> loadFromJson dir commit
+
+loadFromJson :: CachePath -> Commit -> IO (Either String Revision)
+loadFromJson dir commit = do
+    packages <- catch
+        (eitherDecodeFileStrict $ filePath dir commit)
+        (\(SomeException err) -> return $ Left $ show err)
+    return $ Revision commit <$> packages
+
 
 -- | Get JSON version information from nixos.org
 downloadFromNix :: CachePath -> Commit -> IO (Either String FilePath)
@@ -208,7 +206,7 @@ commitUrl :: GitHubRepo -> Commit -> Url
 commitUrl (GitHubRepo user repo) (Commit (Hash hash) date)
     = unpack $ "https://github.com/" <> user <> "/" <> repo <> "/archive/" <> hash <> ".tar.gz"
 
--- | Fetch the the last commits at 00 hours on the specified day
+-- | Fetch the the last commits at 23 hours on the specified day
 -- Verified commits appear earlier in the list
 commitsAt :: CachePath -> GitHubUser -> Day -> IO (Either String [Commit])
 commitsAt dir (GitHubUser guser) day = headCached >>= maybe headFromGithub (return . Right)
@@ -233,10 +231,9 @@ commitsAt dir (GitHubUser guser) day = headCached >>= maybe headFromGithub (retu
         rearrange :: [GitHubCommit] -> [GitHubCommit]
         rearrange = ((++) <$> fst <*> snd) . partition g_verified
 
-        options =
-            Req.header "User-Agent" (encodeUtf8 guser)
-            <>
-            Req.queryParam "until" (Just $ showGregorian day <> "T00:00:00Z")
+        options = Req.header "User-Agent" (encodeUtf8 guser)
+               <> Req.queryParam "until" (Just $ showGregorian day <> "T23:00:00Z")
+               <> Req.queryParam "sha" (Just ("nixpkgs-unstable" :: String))
 
         url = Req.https "api.github.com"
             Req./: "repos"
