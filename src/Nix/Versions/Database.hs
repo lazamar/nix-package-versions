@@ -7,11 +7,16 @@ Save and retrieving Database types from persistent storage
 -}
 
 module Nix.Versions.Database
-    ( connect
+    ( Connection
+    , connect
     , disconnect
-    , versions
+
+    -- Write
     , save
-    , Connection
+
+    -- Read
+    , versions
+    , revisions
     ) where
 
 import Control.Concurrent.Async (mapConcurrently_)
@@ -78,6 +83,9 @@ ensureTablesAreCreated conn = do
 disconnect :: Connection -> IO ()
 disconnect (Connection conn) = SQL.close conn
 
+-------------------------------------------------------------------------------
+-- Read
+
 -- | Retrieve all versions available for a package
 versions :: Connection -> Name -> IO [(Hash, Package)]
 versions (Connection conn) (Name name) = do
@@ -88,6 +96,19 @@ versions (Connection conn) (Name name) = do
     return $ toInfo <$> results
         where
             toInfo (SQLPackageVersion (_, pkg, hash)) = (hash, pkg)
+
+-- | Retrieve all versions available for a package
+-- This will be on the order of the tens, or maximum the
+-- hundreds, so it is fine to just return all of them
+revisions :: Connection -> IO [(Day, Commit, Success)]
+revisions (Connection conn) = do
+    results <- SQL.query_ conn ("SELECT * FROM " <> db_REVISIONS)
+    return $ toInfo <$> results
+        where
+            toInfo (SQLRevision day commit success) = (day, commit, success)
+
+-------------------------------------------------------------------------------
+-- Write
 
 -- | Save the entire database
 save :: Connection -> Day -> Revision -> IO ()
