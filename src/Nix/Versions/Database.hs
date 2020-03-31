@@ -72,7 +72,7 @@ ensureTablesAreCreated conn = do
                         <> ", NIXPATH       TEXT"
                         <> ", PRIMARY KEY (PACKAGE_NAME, VERSION_NAME)"
                         <> ", FOREIGN KEY (PACKAGE_NAME) REFERENCES " <> db_PACKAGE_NAMES <> "(PACKAGE_NAME)"
-                        <> ", FOREIGN KEY (REVISION_HASH) REFERENCES " <> db_REVISIONS <> "(HASH)"
+                        <> ", FOREIGN KEY (REVISION_HASH) REFERENCES " <> db_REVISIONS <> "(COMMIT_HASH)"
                         <> ")"
 
 disconnect :: Connection -> IO ()
@@ -119,7 +119,7 @@ persistVersion (Connection conn) hash name info =
         (\_ -> insertPackageName >> insertVersion)
     where
         insertVersion = SQL.execute conn
-            ("INSERT OR REPLACE INTO " <> db_PACKAGE_VERSIONS <> " VALUES (?,?,?,?,?,?)")
+            ("INSERT OR REPLACE INTO " <> db_PACKAGE_VERSIONS <> " VALUES (?,?,?,?,?)")
             (SQLPackageVersion (name, info, hash))
 
         insertPackageName = SQL.execute conn

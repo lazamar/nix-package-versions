@@ -13,17 +13,13 @@
 -}
 
 module Nix.Revision
-    ( loadCached
-    , loadFromNixpkgs
-    , commitsAt
+    ( build
+    , commitsSince
     , Revision(..)
     , Package(..)
-
-    , commitToFileName
-    , fileNameToCommit
     ) where
 
-import Control.Exception (SomeException(..), catch, tryJust, onException)
+import Control.Exception (SomeException(..), bracket, handle, tryJust, onException)
 import Control.Concurrent.Async (mapConcurrently)
 import Control.Monad (unless, (<=<), join)
 import Control.Monad.Except (runExceptT, liftEither)
@@ -42,7 +38,8 @@ import GHC.Generics (Generic)
 import Nix.Versions.Types (GitHubUser(..), CachePath(..), NixConfig(..), Config(..), Hash(..), Name, Version(..), Commit(..))
 import System.Directory (listDirectory)
 import System.Exit (ExitCode(..))
-import System.Posix.Files (fileExist, removeLink)
+import System.IO.Temp (emptySystemTempFile)
+import System.Posix.Files (removeLink)
 import System.Process (readCreateProcessWithExitCode, shell, CreateProcess(..))
 import Text.Read (readMaybe)
 
@@ -67,52 +64,19 @@ instance FromJSON Package where
        <*>  v .:  "version"
        <*> (v .: "meta" >>= (.:? "position"))
 
--------------------------------------------------------------------------------
--- Saving and loading revision files
-
--- | List of revision commits saved locally
-cachedRevisions :: CachePath -> IO [Commit]
-cachedRevisions (CachePath dir) = do
-    files  <- liftIO $ listDirectory dir
-    return $ mapMaybe fileNameToCommit files
-
--- | Load a revision saved locally
-loadCached :: CachePath -> Commit -> IO (Maybe Revision)
-loadCached dir commit = do
-    cached <- cachedRevisions dir
-    if not (elem commit cached)
-       then return Nothing
-       else eitherToMaybe <$> loadFromJson dir commit
-
-loadFromNixpkgs :: CachePath -> Commit -> IO (Either String Revision)
-loadFromNixpkgs dir commit = do
-    res <- downloadFromNix dir commit
-    case res of
-        Left err -> return $ Left err
-        Right _  -> loadFromJson dir commit
-
-loadFromJson :: CachePath -> Commit -> IO (Either String Revision)
-loadFromJson dir commit = do
-    packages <- catch
-        (eitherDecodeFileStrict $ filePath dir commit)
-        (\(SomeException err) -> return $ Left $ show err)
-    return $ Revision commit <$> packages
-
-
--- | Get JSON version information from nixos.org
-downloadFromNix :: CachePath -> Commit -> IO (Either String FilePath)
-downloadFromNix dir commit = do
-    fileAlreadyThere <- fileExist path
-    if fileAlreadyThere
-       then return (return path)
-       else do
-           result <- downloadNixVersionsTo path `onException` delete path
-           unless (isRight result) (delete path)
-           return result
+-- | Download info for a revision and build a list of all
+-- packages in it. This can take a few minutes.
+build :: Commit -> IO (Either String Revision)
+build commit =
+    withTempFile $ \filePath -> do
+        downloadNixVersionsTo filePath
+        packages <- handle exceptionToEither $ eitherDecodeFileStrict filePath
+        return $ Revision commit <$> packages
     where
-        path = filePath dir commit
+        -- | Create a temporary file without holding a lock to it.
+        withTempFile f = bracket (emptySystemTempFile "NIX_REVISION") removeLink f
 
-        delete = removeLink
+        exceptionToEither (SomeException err) = return $ Left $ show err
 
         downloadNixVersionsTo = run . shell . command
 
@@ -146,31 +110,46 @@ downloadFromNix dir commit = do
               ExitSuccess   -> Right stdOut
               ExitFailure _ -> Left stdErr
 
--- | Get the place where a JSON file with package versions should be saved.
-filePath :: CachePath -> Commit -> FilePath
-filePath (CachePath dir) commit = dir <> "/" <> commitToFileName commit
-
-ext :: String
-ext = ".json"
-
-commitToFileName :: Commit -> String
-commitToFileName  (Commit (Hash hash) date) =
-    showGregorian date <> "-" <> unpack hash <> ext
-
-fileNameToCommit :: String -> Maybe (Commit)
-fileNameToCommit  fname = Commit hash <$> readMaybe (take 10 fname)
-    where
-        hash = Hash $ pack $ dropTail (length ext) $ drop 11 fname
-
-        dropTail n s = reverse $ drop n $ reverse s
-
-
-eitherToMaybe :: Either a b -> Maybe b
-eitherToMaybe = either (const Nothing) Just
-
-
 -------------------------------------------------------------------------------
 -- GitHub
+
+-- | Fetch a list of commits from Day onwards
+-- Sorted oldest to newest
+-- Verified commits appear earlier in the list
+commitsSince :: GitHubUser -> Day -> IO (Either String [Commit])
+commitsSince (GitHubUser guser) day = do
+    response <-
+        tryJust isHttpException
+        $ fmap Req.responseBody
+        $ Req.runReq Req.defaultHttpConfig
+        $ Req.req Req.GET url Req.NoReqBody Req.jsonResponse options
+
+    return $ either Left (Right . fmap g_commit . rearrange) response
+    where
+        -- | Order from oldest to newest and move verified commits to the top
+        -- so that they may be used first.
+        -- Some commits don't build successfully, the prioritisation of
+        -- verified commits tries to mitigate that problem.
+        rearrange :: [GitHubCommit] -> [GitHubCommit]
+        rearrange = ((++) <$> fst <*> snd) . partition g_verified . reverse
+
+        options = Req.header "User-Agent" (encodeUtf8 guser)
+               <> Req.queryParam "since" (Just $ showGregorian day <> "T00:00:00Z")
+               <> Req.queryParam "sha" (Just ("nixpkgs-unstable" :: String))
+
+        url = Req.https "api.github.com"
+            Req./: "repos"
+            Req./: g_user gnixpkgs
+            Req./: g_repo gnixpkgs
+            Req./: "commits"
+
+        isHttpException :: Req.HttpException -> Maybe String
+        isHttpException = Just . show
+
+        catching exc
+            = join
+            . liftIO
+            . fmap liftEither
 
 gnixpkgs :: GitHubRepo
 gnixpkgs = GitHubRepo
@@ -205,48 +184,3 @@ type Url = String
 commitUrl :: GitHubRepo -> Commit -> Url
 commitUrl (GitHubRepo user repo) (Commit (Hash hash) date)
     = unpack $ "https://github.com/" <> user <> "/" <> repo <> "/archive/" <> hash <> ".tar.gz"
-
--- | Fetch the the last commits at 23 hours on the specified day
--- Verified commits appear earlier in the list
-commitsAt :: CachePath -> GitHubUser -> Day -> IO (Either String [Commit])
-commitsAt dir (GitHubUser guser) day = headCached >>= maybe headFromGithub (return . Right)
-    where
-        headCached = (fmap pure . find ((day ==) . commitDate)) <$> cachedRevisions dir
-
-        commitDate (Commit _ date) = date
-
-        headFromGithub = do
-            response <-
-                tryJust isHttpException
-                $ fmap Req.responseBody
-                $ Req.runReq Req.defaultHttpConfig
-                $ Req.req Req.GET url Req.NoReqBody Req.jsonResponse options
-
-            return $ either Left (Right . fmap g_commit . rearrange) response
-
-        -- | Move verified commits to the top, so that they may
-        -- be used first.
-        -- Some commits don't build successfully, the prioritisation of
-        -- verified commits tries to mitigate that problem.
-        rearrange :: [GitHubCommit] -> [GitHubCommit]
-        rearrange = ((++) <$> fst <*> snd) . partition g_verified
-
-        options = Req.header "User-Agent" (encodeUtf8 guser)
-               <> Req.queryParam "until" (Just $ showGregorian day <> "T23:00:00Z")
-               <> Req.queryParam "sha" (Just ("nixpkgs-unstable" :: String))
-
-        url = Req.https "api.github.com"
-            Req./: "repos"
-            Req./: g_user gnixpkgs
-            Req./: g_repo gnixpkgs
-            Req./: "commits"
-
-        isHttpException :: Req.HttpException -> Maybe String
-        isHttpException = Just . show
-
-        catching exc
-            = join
-            . liftIO
-            . fmap liftEither
-
-

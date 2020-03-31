@@ -30,7 +30,7 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to = do
     return res
     where
         f conn date = do
-            eCommits <- Revision.commitsAt cacheDir gitUser date
+            eCommits <- Revision.commitsSince gitUser date
             case eCommits of
                 Left err -> return $ Left $ "Unable to get commits from GitHub for " <> show date <> ": " <> show err
                 Right coms ->
@@ -60,19 +60,13 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to = do
             return (Commit hash date)
 
         download conn represents commit@(Commit _ date) = do
-            mRev <- Revision.loadCached cacheDir commit
-            case mRev of
-                Just _  -> do
-                    putStrLn $ "Cached result for " <> show commit
-                    return $ Right commit
-                Nothing -> do
-                    eRev <- Revision.loadFromNixpkgs cacheDir commit
-                    case eRev of
-                        Left  err -> return (Left (date, err))
-                        Right rev -> do
-                            putStrLn $ "Saving Nix result for" <> show commit
-                            DB.save conn represents rev
-                            return $ Right $ Revision.commit rev
+            eRev <- Revision.build commit
+            case eRev of
+                Left  err -> return (Left (date, err))
+                Right rev -> do
+                    putStrLn $ "Saving Nix result for" <> show commit
+                    DB.save conn represents rev
+                    return $ Right $ Revision.commit rev
 
         eitherToMaybe = either (const Nothing) Just
 
