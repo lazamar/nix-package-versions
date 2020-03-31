@@ -8,6 +8,7 @@ Save and retrieving Database types from persistent storage
 
 module Nix.Versions.Database
     ( Connection
+    , Success(..)
     , connect
     , disconnect
 

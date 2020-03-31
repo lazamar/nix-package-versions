@@ -14,7 +14,7 @@
 
 module Nix.Revision
     ( build
-    , commitsSince
+    , commitsUntil
     , Revision(..)
     , Package(..)
     ) where
@@ -113,11 +113,11 @@ build commit =
 -------------------------------------------------------------------------------
 -- GitHub
 
--- | Fetch a list of commits from Day onwards
+-- | Fetch a list of until end of Day onwards
 -- Sorted oldest to newest
 -- Verified commits appear earlier in the list
-commitsSince :: GitHubUser -> Day -> IO (Either String [Commit])
-commitsSince (GitHubUser guser) day = do
+commitsUntil :: GitHubUser -> Day -> IO (Either String [Commit])
+commitsUntil (GitHubUser guser) day = do
     response <-
         tryJust isHttpException
         $ fmap Req.responseBody
@@ -134,7 +134,7 @@ commitsSince (GitHubUser guser) day = do
         rearrange = ((++) <$> fst <*> snd) . partition g_verified . reverse
 
         options = Req.header "User-Agent" (encodeUtf8 guser)
-               <> Req.queryParam "since" (Just $ showGregorian day <> "T00:00:00Z")
+               <> Req.queryParam "until" (Just $ showGregorian day <> "T23:59:59Z")
                <> Req.queryParam "sha" (Just ("nixpkgs-unstable" :: String))
 
         url = Req.https "api.github.com"
