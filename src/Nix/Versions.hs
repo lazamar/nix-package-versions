@@ -39,7 +39,7 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to = do
                         commits = take maxAttempts coms
                     in
                     tryInSequence (date, "Unable to create dervation after " <> show (length commits) <> " attempts.")
-                        $ fmap (download conn <=< announce)
+                        $ fmap (download conn date <=< announce)
                         $ zip [1..] commits
 
         (fromYear, _, _) = toGregorian from
@@ -50,7 +50,7 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to = do
         dates
             = takeWhile (<= to)
             $ dropWhile (< from)
-            $ [ fromGregorian year month 31
+            $ [ fromGregorian year month 01
               | year <- [fromYear .. toYear]
               , month <- [1..12]
               ]
@@ -59,7 +59,7 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to = do
             putStrLn $ "Attempt " <> show tryCount <> ". Downloading files for " <> showGregorian date <> ". " <> show hash
             return (Commit hash date)
 
-        download conn commit@(Commit _ date) = do
+        download conn represents commit@(Commit _ date) = do
             mRev <- Revision.loadCached cacheDir commit
             case mRev of
                 Just _  -> do
@@ -71,7 +71,7 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to = do
                         Left  err -> return (Left (date, err))
                         Right rev -> do
                             putStrLn $ "Saving Nix result for" <> show commit
-                            DB.save conn rev
+                            DB.save conn represents rev
                             return $ Right $ Revision.commit rev
 
         eitherToMaybe = either (const Nothing) Just

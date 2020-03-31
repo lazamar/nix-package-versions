@@ -90,13 +90,24 @@ versions (Connection conn) (Name name) = do
             toInfo (SQLPackageVersion (_, pkg, commit)) = (commit, pkg)
 
 -- | Save the entire database
-save :: Connection -> Revision -> IO ()
-save conn (Revision commit packages) = do
+save :: Connection -> Day -> Revision -> IO ()
+save conn represents revision@(Revision commit packages) = do
+    persistRevisionWithSuccess False
     mapConcurrently_ persistPackage (HashMap.toList packages)
+    persistRevisionWithSuccess True
     where
         persistPackage (name, info) =
             persistVersion conn commit name info
 
+        persistRevisionWithSuccess =
+            persistRevision conn represents revision . Success
+
+
+persistRevision :: Connection -> Day -> Revision -> Success -> IO ()
+persistRevision (Connection conn) represents (Revision commit _) success =
+    SQL.execute conn
+            ("INSERT OR REPLACE INTO " <> db_REVISIONS <> " VALUES (?,?,?,?)")
+            (SQLRevision represents commit success)
 
 -- | Save the version info of a package in the database
 persistVersion :: Connection -> Commit -> Name -> Package -> IO ()
