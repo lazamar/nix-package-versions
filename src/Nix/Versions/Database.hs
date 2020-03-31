@@ -175,23 +175,23 @@ nullable = fromMaybe SQLNull
 
 instance FromRow SQLPackageVersion where
     fromRow = create
-            <$> SQL.field
-            <*> SQL.field
-            <*> SQL.field
-            <*> SQL.field
-            <*> SQL.field
-            <*> SQL.field
+            <$> (SQL.field <&> Name)
+            <*> (SQL.field <&> Version)
+            <*> (SQL.field <&> Hash)
+            <*> (SQL.field)
+            <*> (SQL.field)
+            <*> (SQL.field <&> ModifiedJulianDay . fromInteger)
         where
-            create :: Text -> Text -> Text -> Maybe Text -> Maybe Text -> Integer -> SQLPackageVersion
+            create :: Name -> Version -> Hash -> Maybe Text -> Maybe Text -> Day -> SQLPackageVersion
             create name version revision description nixpath date =
                 SQLPackageVersion
-                    ( Name name
+                    ( name
                     , Package
-                        { version = Version version
+                        { version = version
                         , description = description
                         , nixpkgsPath = unpack <$> nixpath
                         }
-                    , Commit (Hash revision) (ModifiedJulianDay $ fromInteger date)
+                    , Commit revision date
                     )
 
 dayToInt :: Day -> Int64
