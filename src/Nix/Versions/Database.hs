@@ -1,3 +1,7 @@
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase #-}
+
 {-|
 Save and retrieving Database types from persistent storage
 -}
@@ -12,6 +16,8 @@ module Nix.Versions.Database
 
 import Control.Concurrent.Async (mapConcurrently_)
 import Control.Exception (catchJust)
+import Data.Int (Int64)
+import Data.Functor ((<&>))
 import Data.Maybe (fromMaybe)
 import Data.Text (Text, pack, unpack)
 import Data.Time.Calendar (Day(..), toModifiedJulianDay)
@@ -26,8 +32,9 @@ newtype Connection = Connection SQL.Connection
 
 -- Constants
 
-db_PACKAGE_NAMES = "PACKAGE_NAMES"
+db_PACKAGE_NAMES    = "PACKAGE_NAMES"
 db_PACKAGE_VERSIONS = "PACKAGE_VERSIONS"
+db_REVISIONS        = "REVISIONS"
 
 -- | Get a connection and prepare database for usage
 connect :: CachePath -> DBFile -> IO Connection
@@ -41,19 +48,31 @@ connect (CachePath dir) (DBFile fname) = do
 
 ensureTablesAreCreated :: SQL.Connection -> IO ()
 ensureTablesAreCreated conn = do
+    SQL.execute_ conn $ "CREATE TABLE IF NOT EXISTS  " <> db_REVISIONS <> " "
+                        -- | Details about the Revision's commit
+                        <> "( COMMIT_HASH       TEXT        NOT NULL PRIMARY KEY"
+                        <> ", COMMIT_DAY        INTEGER     NOT NULL"
+                        -- | Even though the commit might have been done in a certain date,
+                        -- we added it to the database to represent the state of nixpkgs
+                        -- on a specific date, which may be different from the exact commit date.
+                        <> ", REPRESENTS_DAY    INTEGER     NOT NULL"
+                        -- | Whether we were able to successfully add all Revision packages to the table
+                        <> ", SUCCESS           BOOLEAN     NOT NULL CHECK (SUCCESS IN (0,1))"
+                        <> ")"
+
     SQL.execute_ conn $ "CREATE TABLE IF NOT EXISTS  " <> db_PACKAGE_NAMES <> " "
                         <> "( PACKAGE_NAME TEXT PRIMARY KEY"
                         <> ")"
 
     SQL.execute_ conn $ "CREATE TABLE IF NOT EXISTS  " <> db_PACKAGE_VERSIONS <> " "
-                        <> "( PACKAGE_NAME TEXT NOT NULL"
-                        <> ", VERSION_NAME TEXT NOT NULL"
+                        <> "( PACKAGE_NAME  TEXT NOT NULL"
+                        <> ", VERSION_NAME  TEXT NOT NULL"
                         <> ", REVISION_HASH TEXT NOT NULL"
-                        <> ", DESCRIPTION TEXT"
-                        <> ", NIXPATH TEXT"
-                        <> ", DAY INTEGER NOT NULL"
+                        <> ", DESCRIPTION   TEXT"
+                        <> ", NIXPATH       TEXT"
                         <> ", PRIMARY KEY (PACKAGE_NAME, VERSION_NAME)"
                         <> ", FOREIGN KEY (PACKAGE_NAME) REFERENCES " <> db_PACKAGE_NAMES <> "(PACKAGE_NAME)"
+                        <> ", FOREIGN KEY (REVISION_HASH) REFERENCES " <> db_REVISIONS <> "(HASH)"
                         <> ")"
 
 disconnect :: Connection -> IO ()
@@ -102,6 +121,35 @@ persistVersion (Connection conn) commit name info =
                then Just ()
                else Nothing
 
+
+-- | Whether all revision entries were added to the table.
+newtype Success = Success Bool
+    deriving (Show, Eq)
+    deriving newtype (Enum)
+
+data SQLRevision = SQLRevision Day Commit Success
+
+instance FromRow SQLRevision where
+    fromRow = (\hash date represents success -> SQLRevision represents (Commit hash date) success)
+        <$> (SQL.field <&> Hash)
+        <*> (SQL.field <&> ModifiedJulianDay . fromInteger)
+        <*> (SQL.field <&> ModifiedJulianDay . fromInteger)
+        <*> (SQL.field <&> Success . toBool)
+        where
+            toBool :: Int64 -> Bool
+            toBool = \case
+                0 -> False
+                _ -> True
+
+instance ToRow SQLRevision where
+    toRow (SQLRevision represents (Commit hash date) success) =
+        [ SQLText    $ fromHash hash                   -- ^ COMMIT_HASH
+        , SQLInteger $ dayToInt date                   -- ^ COMMIT_DAY
+        , SQLInteger $ dayToInt represents             -- ^ REPRESENTS_DAY
+        , SQLInteger $ fromIntegral $ fromEnum success -- ^ SUCCESS
+        ]
+
+
 newtype SQLPackageName = SQLPackageName Name
 
 instance ToRow SQLPackageName where
@@ -146,3 +194,5 @@ instance FromRow SQLPackageVersion where
                     , Commit (Hash revision) (ModifiedJulianDay $ fromInteger date)
                     )
 
+dayToInt :: Day -> Int64
+dayToInt = fromInteger . toModifiedJulianDay
