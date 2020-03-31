@@ -79,7 +79,7 @@ disconnect :: Connection -> IO ()
 disconnect (Connection conn) = SQL.close conn
 
 -- | Retrieve all versions available for a package
-versions :: Connection -> Name -> IO [(Commit, Package)]
+versions :: Connection -> Name -> IO [(Hash, Package)]
 versions (Connection conn) (Name name) = do
     results <- SQL.query
         conn
@@ -87,17 +87,19 @@ versions (Connection conn) (Name name) = do
         [unpack name]
     return $ toInfo <$> results
         where
-            toInfo (SQLPackageVersion (_, pkg, commit)) = (commit, pkg)
+            toInfo (SQLPackageVersion (_, pkg, hash)) = (hash, pkg)
 
 -- | Save the entire database
 save :: Connection -> Day -> Revision -> IO ()
-save conn represents revision@(Revision commit packages) = do
+save conn represents revision = do
     persistRevisionWithSuccess False
     mapConcurrently_ persistPackage (HashMap.toList packages)
     persistRevisionWithSuccess True
     where
+        Revision (Commit hash _) packages = revision
+
         persistPackage (name, info) =
-            persistVersion conn commit name info
+            persistVersion conn hash name info
 
         persistRevisionWithSuccess =
             persistRevision conn represents revision . Success
@@ -110,15 +112,15 @@ persistRevision (Connection conn) represents (Revision commit _) success =
             (SQLRevision represents commit success)
 
 -- | Save the version info of a package in the database
-persistVersion :: Connection -> Commit -> Name -> Package -> IO ()
-persistVersion (Connection conn) commit name info =
+persistVersion :: Connection -> Hash -> Name -> Package -> IO ()
+persistVersion (Connection conn) hash name info =
     catchJust noPackageWithThatName
         insertVersion
         (\_ -> insertPackageName >> insertVersion)
     where
         insertVersion = SQL.execute conn
             ("INSERT OR REPLACE INTO " <> db_PACKAGE_VERSIONS <> " VALUES (?,?,?,?,?,?)")
-            (SQLPackageVersion (name, info, commit))
+            (SQLPackageVersion (name, info, hash))
 
         insertPackageName = SQL.execute conn
             ("INSERT OR REPLACE INTO " <> db_PACKAGE_NAMES <> " VALUES (?)")
@@ -169,16 +171,15 @@ instance ToRow SQLPackageName where
 instance FromRow SQLPackageName where
     fromRow = (SQLPackageName . Name) <$> SQL.field
 
-newtype SQLPackageVersion = SQLPackageVersion (Name, Package, Commit)
+newtype SQLPackageVersion = SQLPackageVersion (Name, Package, Hash)
 
 instance ToRow SQLPackageVersion where
-    toRow (SQLPackageVersion (name, Package { description, nixpkgsPath, version }, Commit hash date)) =
-        [ SQLText $ fromName name
-        , SQLText $ fromVersion version
-        , SQLText $ fromHash hash
-        , nullable $ SQLText <$> description
-        , nullable $ SQLText . pack <$> nixpkgsPath
-        , SQLInteger $ fromInteger $ toModifiedJulianDay date
+    toRow (SQLPackageVersion (name, Package { description, nixpkgsPath, version }, hash)) =
+        [ SQLText $ fromName name                   -- ^ PACKAGE_NAME
+        , SQLText $ fromVersion version             -- ^ VERSION_NAME
+        , SQLText $ fromHash hash                   -- ^ REVISION_HASH
+        , nullable $ SQLText <$> description        -- ^ DESCRIPTION
+        , nullable $ SQLText . pack <$> nixpkgsPath -- ^ NIXPATH
         ]
 
 nullable :: Maybe SQLData -> SQLData
@@ -191,10 +192,9 @@ instance FromRow SQLPackageVersion where
             <*> (SQL.field <&> Hash)
             <*> (SQL.field)
             <*> (SQL.field)
-            <*> (SQL.field <&> ModifiedJulianDay . fromInteger)
         where
-            create :: Name -> Version -> Hash -> Maybe Text -> Maybe Text -> Day -> SQLPackageVersion
-            create name version revision description nixpath date =
+            create :: Name -> Version -> Hash -> Maybe Text -> Maybe Text -> SQLPackageVersion
+            create name version revision description nixpath =
                 SQLPackageVersion
                     ( name
                     , Package
@@ -202,7 +202,7 @@ instance FromRow SQLPackageVersion where
                         , description = description
                         , nixpkgsPath = unpack <$> nixpath
                         }
-                    , Commit revision date
+                    , revision
                     )
 
 dayToInt :: Day -> Int64
