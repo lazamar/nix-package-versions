@@ -38,7 +38,7 @@ to :: Day
 to = read "2019-04-01"
 
 main :: IO ()
-main = Server.run
+main = Server.run config
 
 downloadRevisions = do
     result <- V.savePackageVersionsForPeriod config from to

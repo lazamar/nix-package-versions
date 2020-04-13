@@ -45,6 +45,7 @@ dependencies:
 - wai
 - warp
 - blaze-html
+- blaze-markup
 - http-types
 
 library:
