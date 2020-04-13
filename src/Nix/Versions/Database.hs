@@ -8,12 +8,13 @@ Save and retrieving Database types from persistent storage
 
 module Nix.Versions.Database
     ( Connection
-    , Success(..)
+    , RevisionState(..)
     , connect
     , disconnect
 
     -- Write
     , save
+    , registerInvalidRevision
 
     -- Read
     , versions
@@ -63,7 +64,7 @@ ensureTablesAreCreated conn = do
                         -- on a specific date, which may be different from the exact commit date.
                         <> ", REPRESENTS_DAY    INTEGER     NOT NULL"
                         -- | Whether we were able to successfully add all Revision packages to the table
-                        <> ", SUCCESS           BOOLEAN     NOT NULL CHECK (SUCCESS IN (0,1))"
+                        <> ", STATE             TEXT        NOT NULL"
                         <> ")"
 
     SQL.execute_ conn $ "CREATE TABLE IF NOT EXISTS  " <> db_PACKAGE_NAMES <> " "
@@ -101,37 +102,43 @@ versions (Connection conn) (Name name) = do
 -- | Retrieve all versions available for a package
 -- This will be on the order of the tens, or maximum the
 -- hundreds, so it is fine to just return all of them
-revisions :: Connection -> IO [(Day, Commit, Success)]
+revisions :: Connection -> IO [(Day, Commit, RevisionState)]
 revisions (Connection conn) = do
     results <- SQL.query_ conn ("SELECT * FROM " <> db_REVISIONS)
     return $ toInfo <$> results
         where
-            toInfo (SQLRevision day commit success) = (day, commit, success)
+            toInfo (SQLRevision day commit state) = (day, commit, state)
 
 -------------------------------------------------------------------------------
 -- Write
 
+-- | When there is a problem building the revision this function allows us
+-- to record that in the database so that later we don't try to build it again
+registerInvalidRevision :: Connection -> Day -> Commit -> IO ()
+registerInvalidRevision conn represents commit =
+    persistRevision conn represents (Revision commit mempty) InvalidRevision
+
 -- | Save the entire database
 save :: Connection -> Day -> Revision -> IO ()
 save conn represents revision = do
-    persistRevisionWithSuccess False
+    persistRevisionWithState Incomplete
     mapConcurrently_ persistPackage (HashMap.toList packages)
-    persistRevisionWithSuccess True
+    persistRevisionWithState Success
     where
         Revision (Commit hash _) packages = revision
 
         persistPackage (name, info) =
             persistVersion conn hash name info
 
-        persistRevisionWithSuccess =
-            persistRevision conn represents revision . Success
+        persistRevisionWithState =
+            persistRevision conn represents revision
 
 
-persistRevision :: Connection -> Day -> Revision -> Success -> IO ()
-persistRevision (Connection conn) represents (Revision commit _) success =
+persistRevision :: Connection -> Day -> Revision -> RevisionState -> IO ()
+persistRevision (Connection conn) represents (Revision commit _) state =
     SQL.execute conn
             ("INSERT OR REPLACE INTO " <> db_REVISIONS <> " VALUES (?,?,?,?)")
-            (SQLRevision represents commit success)
+            (SQLRevision represents commit state)
 
 -- | Save the version info of a package in the database
 persistVersion :: Connection -> Hash -> Name -> Package -> IO ()
@@ -158,18 +165,20 @@ persistVersion (Connection conn) hash name info =
 
 
 -- | Whether all revision entries were added to the table.
-newtype Success = Success Bool
-    deriving (Show, Eq)
-    deriving newtype (Enum)
+data RevisionState
+    = Success            -- ^ All revision packages were successfully added to the DB
+    | Incomplete         -- ^ The process of adding packages to the DB was started but not finished
+    | InvalidRevision    -- ^ This revision cannot be built. It is not worth trying again.
+    deriving (Show, Eq, Enum, Read)
 
-data SQLRevision = SQLRevision Day Commit Success
+data SQLRevision = SQLRevision Day Commit RevisionState
 
 instance FromRow SQLRevision where
-    fromRow = (\hash date represents success -> SQLRevision represents (Commit hash date) success)
+    fromRow = (\hash date represents state -> SQLRevision represents (Commit hash date) state)
         <$> (SQL.field <&> Hash)
         <*> (SQL.field <&> ModifiedJulianDay . fromInteger)
         <*> (SQL.field <&> ModifiedJulianDay . fromInteger)
-        <*> (SQL.field <&> Success . toBool)
+        <*> (SQL.field <&> read)
         where
             toBool :: Int64 -> Bool
             toBool = \case
@@ -177,11 +186,11 @@ instance FromRow SQLRevision where
                 _ -> True
 
 instance ToRow SQLRevision where
-    toRow (SQLRevision represents (Commit hash date) success) =
+    toRow (SQLRevision represents (Commit hash date) state) =
         [ SQLText    $ fromHash hash                   -- ^ COMMIT_HASH
         , SQLInteger $ dayToInt date                   -- ^ COMMIT_DAY
         , SQLInteger $ dayToInt represents             -- ^ REPRESENTS_DAY
-        , SQLInteger $ fromIntegral $ fromEnum success -- ^ SUCCESS
+        , SQLText    $ pack $ show state               -- ^ STATE
         ]
 
 

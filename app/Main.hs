@@ -31,10 +31,10 @@ config = Config
     }
 
 from :: Day
-from = read "2019-01-31"
+from = read "2014-01-01"
 
 to :: Day
-to = read "2019-02-01"
+to = read "2019-04-01"
 
 main :: IO ()
 main = do

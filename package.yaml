@@ -24,6 +24,7 @@ dependencies:
 - process
 - parsec
 - unordered-containers
+- containers
 - hashable
 - aeson
 - timeit

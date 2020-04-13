@@ -38,7 +38,7 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to = do
         weeksAlreadyInDB
             = Set.fromList
             $ fmap (toWeek . revDate)
-            $ filter isSuccessful
+            $ filter wasAttempted
             $ revisions
 
         weeksAsked
@@ -46,6 +46,7 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to = do
             $ filter (isWeekOfInterest . snd)
             $ toWeek <$> [from .. to]
 
+        -- | TODO: Add log of what is being skipped
         weeksNeeded = filter (not . (`Set.member` weeksAlreadyInDB)) weeksAsked
 
         -- | One day per week of interest
@@ -56,7 +57,10 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to = do
     return res
 
     where
-        isSuccessful (_,_,(Success s)) = s
+        wasAttempted (_,_,state) = case state of
+            Success         -> True
+            InvalidRevision -> True
+            Incomplete      -> False
 
         revDate (day, _, _) = day
 
@@ -80,7 +84,9 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to = do
         download conn day commit = do
             eRev <- Revision.build commit
             case eRev of
-                Left  err -> return (Left (day, err))
+                Left  err -> do
+                    DB.registerInvalidRevision conn day commit
+                    return (Left (day, err))
                 Right rev -> do
                     putStrLn $ "Saving Nix result for" <> show commit
                     DB.save conn day rev
