@@ -33,18 +33,10 @@ app conn request respond = do
         "/"     -> pageHome conn request
         _       -> return pageNotFound
     respond response
+
 pageHome :: Connection -> Request -> IO Response
 pageHome conn request = do
-    let pkgName
-            = fmap decodeUtf8
-            $ join
-            $ lookup (fromString pkgKey)
-            $ queryString request
-
-    packages <- case pkgName of
-        Nothing   -> return []
-        Just name -> Persistent.versions conn (Name name)
-
+    mPackages <- traverse (Persistent.versions conn . Name) mSearchedPackage
     return $ responseLBS status200 [("Content-Type", "text/html")] $ renderHtml $
         H.docTypeHtml $ do
             H.form
@@ -55,10 +47,22 @@ pageHome conn request = do
                     ! A.type_ "text"
                     ! A.name (fromString pkgKey)
                     ! A.placeholder "Package name"
-
-            H.div $ mapM_ (H.p . fromString . show) packages
+            createResults mPackages
     where
         pkgKey = "package"
+
+        mSearchedPackage
+            = fmap decodeUtf8
+            $ join
+            $ lookup (fromString pkgKey)
+            $ queryString request
+
+        createResults Nothing        = mempty
+        createResults (Just [])      = H.p "No results to found"
+        createResults (Just results) =
+            H.div $ mapM_ (H.p . fromString . show) results
+
+
 
 pageNotFound :: Response
 pageNotFound = responseLBS
