@@ -22,6 +22,7 @@ import qualified Nix.Versions.Database as Persistent
 
 import qualified Nix.Versions.Parsers as Parsers
 import qualified Nix.Versions as V
+import qualified App.Server as Server
 
 config :: Config
 config = Config
@@ -37,7 +38,9 @@ to :: Day
 to = read "2019-04-01"
 
 main :: IO ()
-main = do
+main = Server.run
+
+downloadRevisions = do
     result <- V.savePackageVersionsForPeriod config from to
     mapM_ print result
 

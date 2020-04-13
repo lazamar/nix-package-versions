@@ -42,6 +42,10 @@ dependencies:
 - req
 - mtl
 - directory
+- wai
+- warp
+- blaze-html
+- http-types
 
 library:
   source-dirs: src
