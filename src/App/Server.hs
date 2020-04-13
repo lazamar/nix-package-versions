@@ -1,4 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE TupleSections #-}
 
 module App.Server (run) where
 
@@ -12,8 +14,9 @@ import Network.HTTP.Types (status200, status404)
 import Network.Wai (Application, Request, Response, responseLBS, rawPathInfo, queryString)
 import Text.Blaze.Html.Renderer.Utf8 (renderHtml)
 import Text.Blaze.Html5 ((!))
-import Nix.Versions.Types (Config(..), Name(..))
+import Nix.Versions.Types (Hash(..), Version(..), Config(..), Name(..))
 import Nix.Versions.Database (Connection)
+import Nix.Revision (Package(..))
 
 import qualified Network.Wai.Handler.Warp as Warp
 import qualified Text.Blaze.Html5 as H
@@ -36,19 +39,20 @@ app conn request respond = do
 
 pageHome :: Connection -> Request -> IO Response
 pageHome conn request = do
-    mPackages <- traverse (Persistent.versions conn . Name) mSearchedPackage
+    mPackages <- traverse getVersions mSearchedPackage
     return $ responseLBS status200 [("Content-Type", "text/html")] $ renderHtml $
-        H.docTypeHtml $ do
-            H.form
-                ! A.action "/"
-                ! A.method "GET"
-                $ do
+        H.docTypeHtml do
+        H.body do
+            H.form ! A.action "/" ! A.method "GET" $ do
                 H.input
                     ! A.type_ "text"
                     ! A.name (fromString pkgKey)
                     ! A.placeholder "Package name"
             createResults mPackages
     where
+        getVersions name = (n,) <$> Persistent.versions conn n
+            where n = Name name
+
         pkgKey = "package"
 
         mSearchedPackage
@@ -57,12 +61,23 @@ pageHome conn request = do
             $ lookup (fromString pkgKey)
             $ queryString request
 
-        createResults Nothing        = mempty
-        createResults (Just [])      = H.p "No results to found"
-        createResults (Just results) =
-            H.div $ mapM_ (H.p . fromString . show) results
+        createResults Nothing                 = mempty
+        createResults (Just (name, results)) =
+            H.table ! A.class_ "table" $ do
+                H.thead $ H.tr do
+                    H.th "Attribute Name"
+                    H.th "Version"
+                    H.th "Revision"
+                H.tbody $
+                    if null results
+                       then H.p "No results to found"
+                       else mapM_ (toRow name) results
 
-
+        toRow (Name name) (Hash hash, Package description (Version v) _) =
+            H.tr do
+                H.td $ H.text name
+                H.td $ H.text v
+                H.td $ H.text hash
 
 pageNotFound :: Response
 pageNotFound = responseLBS
