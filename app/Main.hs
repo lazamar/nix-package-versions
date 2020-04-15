@@ -20,7 +20,6 @@ import qualified Data.HashMap.Strict as H
 import qualified Nix.Revision as Revision
 import qualified Nix.Versions.Database as Persistent
 
-import qualified Nix.Versions.Parsers as Parsers
 import qualified Nix.Versions as V
 import qualified App.Server as Server
 

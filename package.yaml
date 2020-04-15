@@ -47,6 +47,7 @@ dependencies:
 - blaze-html
 - blaze-markup
 - http-types
+- concurrency
 
 library:
   source-dirs: src
