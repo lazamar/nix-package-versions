@@ -48,6 +48,7 @@ dependencies:
 - blaze-markup
 - http-types
 - concurrency
+- logging-effect
 
 library:
   source-dirs: src
