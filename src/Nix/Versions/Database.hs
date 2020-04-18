@@ -29,7 +29,7 @@ import Data.Maybe (fromMaybe)
 import Data.Text (Text, pack, unpack)
 import Data.Time.Calendar (Day(..), toModifiedJulianDay)
 import Database.SQLite.Simple (ToRow(toRow), FromRow(fromRow), SQLData(..))
-import Nix.Revision (Revision(..), Package(..))
+import Nix.Revision (Revision(..), RevisionPackages, Package(..))
 import Nix.Versions.Types (CachePath(..), DBFile(..), Hash(..), Version(..), Name(..), Commit(..))
 
 import qualified Data.HashMap.Strict as HashMap
@@ -115,18 +115,18 @@ revisions (Connection conn) = do
 
 -- | When there is a problem building the revision this function allows us
 -- to record that in the database so that later we don't try to build it again
-registerInvalidRevision :: Connection -> Day -> Commit -> IO ()
-registerInvalidRevision conn represents commit =
-    persistRevision conn represents (Revision commit mempty) InvalidRevision
+registerInvalidRevision :: Connection -> Day -> Revision -> IO ()
+registerInvalidRevision conn represents revision =
+    persistRevision conn represents revision InvalidRevision
 
 -- | Save the entire database
-save :: Connection -> Day -> Revision -> IO ()
-save conn represents revision = do
+save :: Connection -> Day -> Revision -> RevisionPackages -> IO ()
+save conn represents revision packages = do
     persistRevisionWithState Incomplete
     mapConcurrently_ persistPackage (HashMap.toList packages)
     persistRevisionWithState Success
     where
-        Revision (Commit hash _) packages = revision
+        Revision (Commit hash _) = revision
 
         persistPackage (name, info) =
             persistVersion conn hash name info
@@ -136,7 +136,7 @@ save conn represents revision = do
 
 
 persistRevision :: Connection -> Day -> Revision -> RevisionState -> IO ()
-persistRevision (Connection conn) represents (Revision commit _) state =
+persistRevision (Connection conn) represents (Revision commit) state =
     SQL.execute conn
             ("INSERT OR REPLACE INTO " <> db_REVISIONS <> " VALUES (?,?,?,?)")
             (SQLRevision represents commit state)

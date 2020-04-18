@@ -30,20 +30,21 @@ spec = do
         let pname = Name "my-package"
             pkg   = Package Nothing (Version "1.0") Nothing
             commit = Commit (Hash "hash") (ModifiedJulianDay 10)
-            revision = Revision commit $ HM.fromList [(pname, pkg)]
+            packages = HM.fromList [(pname, pkg)]
+            revision = Revision commit
 
         it "can save and load a revision" $ do
             overDatabase $ \conn -> do
-                () <- P.save conn day revision
+                () <- P.save conn day revision packages
                 v1 <- P.versions conn pname
                 length v1 `shouldBe` 1
 
         -- We can add the same thing over and over again and we won't get duplicates
         it "Adding revisions is idempotent" $ do
             overDatabase $ \conn -> do
-                () <- P.save conn day revision
+                () <- P.save conn day revision packages
                 v1 <- P.versions conn pname
-                () <- P.save conn day revision
+                () <- P.save conn day revision packages
                 v2 <- P.versions conn pname
                 v1 `shouldBe` v2
                 length v1 `shouldBe` 1

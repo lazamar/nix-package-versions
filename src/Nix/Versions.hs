@@ -86,11 +86,11 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to = do
             eRev <- liftIO $ Revision.build commit
             case eRev of
                 Left  err -> do
-                    liftIO $ DB.registerInvalidRevision conn day commit
+                    liftIO $ DB.registerInvalidRevision conn day (Revision.Revision commit)
                     return (Left (day, err))
-                Right rev -> do
+                Right (rev, packages) -> do
                     liftIO $ putStrLn $ "Saving Nix result for" <> show commit
-                    liftIO $ DB.save conn day rev
+                    liftIO $ DB.save conn day rev packages
                     return $ Right $ Revision.commit rev
 
 newtype Week = Week Int

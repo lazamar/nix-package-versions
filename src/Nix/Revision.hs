@@ -17,6 +17,7 @@ module Nix.Revision
     ( build
     , commitsUntil
     , Revision(..)
+    , RevisionPackages
     , Package(..)
     , Channel
     ) where
@@ -65,8 +66,9 @@ data Channel
 -- | The contents of a json file with package information
 data Revision = Revision
     { commit   :: Commit
-    , packages :: HashMap Name Package
     } deriving (Show, Generic)
+
+type RevisionPackages = HashMap Name Package
 
 -- | The information we have about a nix package in one revision
 data Package = Package
@@ -83,12 +85,12 @@ instance FromJSON Package where
 
 -- | Download info for a revision and build a list of all
 -- packages in it. This can take a few minutes.
-build ::  Commit -> IO (Either String Revision)
+build ::  Commit -> IO (Either String (Revision, RevisionPackages))
 build commit =
     withTempFile $ \filePath -> do
         downloadNixVersionsTo filePath
         packages <- handle exceptionToEither $ eitherDecodeFileStrict filePath
-        return $ Revision commit <$> packages
+        return $ (Revision commit,) <$> packages
     where
         -- | Create a temporary file without holding a lock to it.
         withTempFile f = bracket (emptySystemTempFile "NIX_REVISION") removeLink f
