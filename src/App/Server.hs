@@ -43,7 +43,7 @@ pageHome conn request = do
     return $ responseLBS status200 [("Content-Type", "text/html")] $ renderHtml $
         H.docTypeHtml do
         H.body do
-            H.form ! A.action "/" ! A.method "GET" $ do
+            H.form ! A.action "." ! A.method "GET" $ do
                 H.input
                     ! A.type_ "text"
                     ! A.name (fromString pkgKey)
