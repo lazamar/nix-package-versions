@@ -89,6 +89,8 @@ disconnect (Connection conn) = SQL.close conn
 -- Read
 
 -- | Retrieve all versions available for a package
+-- This will be on the order of the tens, or maximum the
+-- hundreds, so it is fine to just return all of them
 versions :: Connection -> Name -> IO [(Hash, Package)]
 versions (Connection conn) (Name name) = do
     results <- SQL.query
@@ -99,9 +101,8 @@ versions (Connection conn) (Name name) = do
         where
             toInfo (SQLPackageVersion (_, pkg, hash)) = (hash, pkg)
 
--- | Retrieve all versions available for a package
--- This will be on the order of the tens, or maximum the
--- hundreds, so it is fine to just return all of them
+-- | Retrieve all revisions available in the database
+-- This will be between one hundred and one thousand.
 revisions :: Connection -> IO [(Day, Commit, RevisionState)]
 revisions (Connection conn) = do
     results <- SQL.query_ conn ("SELECT * FROM " <> db_REVISIONS)

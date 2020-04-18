@@ -7,6 +7,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE LambdaCase #-}
 
 {-| This module retrieves and parses information about Nix revisions.
    Revisions are available at https://nixos.org/nixos/packages
@@ -17,6 +18,7 @@ module Nix.Revision
     , commitsUntil
     , Revision(..)
     , Package(..)
+    , Channel
     ) where
 
 import Control.Exception (SomeException(..), bracket, handle, tryJust, onException)
@@ -45,9 +47,24 @@ import Text.Read (readMaybe)
 
 import qualified Network.HTTP.Req as Req
 
+-- | A Nix distribution channel.
+-- There is a one to one correlation between nix channels and branches in NixOs/nixpkgs
+data Channel
+    = Nixpkgs_18_09
+    | Nixpkgs_19_03
+    | Nixpkgs_19_09
+    | Nixpkgs_20_03
+    | Nixpkgs_unstable
+    | Nixos_18_09
+    | Nixos_19_03
+    | Nixos_19_09
+    | Nixos_20_03
+    | Nixos_unstable
+    deriving (Show, Eq, Bounded, Enum)
+
 -- | The contents of a json file with package information
 data Revision = Revision
-    { commit :: Commit
+    { commit   :: Commit
     , packages :: HashMap Name Package
     } deriving (Show, Generic)
 
@@ -66,7 +83,7 @@ instance FromJSON Package where
 
 -- | Download info for a revision and build a list of all
 -- packages in it. This can take a few minutes.
-build :: Commit -> IO (Either String Revision)
+build ::  Commit -> IO (Either String Revision)
 build commit =
     withTempFile $ \filePath -> do
         downloadNixVersionsTo filePath
@@ -109,6 +126,19 @@ build commit =
             return $ case exitCode of
               ExitSuccess   -> Right stdOut
               ExitFailure _ -> Left stdErr
+
+channelBranch :: Channel -> GitBranch
+channelBranch = GitBranch . \case
+    Nixpkgs_18_09    -> "nixpkgs-18.09-darwin"
+    Nixpkgs_19_03    -> "nixpkgs-19.03-darwin"
+    Nixpkgs_19_09    -> "nixpkgs-19.09-darwin"
+    Nixpkgs_20_03    -> "nixpkgs-20.03-darwin"
+    Nixpkgs_unstable -> "nixpkgs-unstable"
+    Nixos_18_09      -> "nixos-18.09"
+    Nixos_19_03      -> "nixos-19.03"
+    Nixos_19_09      -> "nixos-19.09"
+    Nixos_20_03      -> "nixos-20.03"
+    Nixos_unstable   -> "nixos-unstable"
 
 -------------------------------------------------------------------------------
 -- GitHub
@@ -166,6 +196,8 @@ data GitHubCommit = GitHubCommit
     { g_verified :: Bool
     , g_commit :: Commit
     }
+
+newtype GitBranch = GitBranch Text
 
 instance FromJSON GitHubCommit where
     parseJSON = withObject "GitHubCommit " $ \v ->
