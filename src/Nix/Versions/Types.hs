@@ -21,6 +21,7 @@ module Nix.Versions.Types
 import Data.Aeson (FromJSON, FromJSONKey, ToJSON, ToJSONKey)
 import Data.Hashable (Hashable)
 import Data.Text (Text)
+import Data.ByteString (ByteString)
 import Data.Time.Calendar (Day)
 import Data.Monoid (Monoid)
 import GHC.Generics (Generic)
@@ -30,12 +31,19 @@ data Config = Config
     , config_cacheDirectory :: CachePath
     , config_gitHubUser     :: GitHubUser
     }
+    deriving (Show)
 
 newtype DBFile = DBFile String
+    deriving (Show)
 
-newtype GitHubUser = GitHubUser Text
+data GitHubUser = GitHubUser
+    { g_username :: ByteString
+    , g_authToken :: ByteString
+    }
+    deriving (Show)
 
 newtype CachePath = CachePath FilePath
+    deriving (Show)
 
 class NixConfig m where
     getConfig :: m Config

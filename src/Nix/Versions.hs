@@ -8,19 +8,21 @@ module Nix.Versions
     ( savePackageVersionsForPeriod
     ) where
 
+import Control.Applicative ((<*))
+import Control.Concurrent.Classy.Async (async, wait)
+import Control.Monad.Conc.Class (MonadConc, STM, atomically, getNumCapabilities, threadDelay)
+import Control.Monad.STM.Class (TVar, newTVar, readTVar, writeTVar, retry)
+import Control.Monad ((<=<), (>>), foldM)
+import Control.Monad.Catch (MonadMask)
 import Control.Monad.Except (liftIO )
 import Control.Monad.IO.Class (MonadIO(..))
-import Control.Monad.Catch (MonadMask)
-import Control.Concurrent.Classy (MonadConc)
-import Control.Concurrent.Classy.Async (mapConcurrently)
+import Data.Hashable (Hashable)
+import Data.Set (Set)
 import Data.Time.Calendar (Day, showGregorian)
 import Data.Time.Calendar.WeekDate (toWeekDate, fromWeekDate)
-import Data.Hashable (Hashable)
-import Nix.Versions.Types (Commit(..), Config(..))
 import Nix.Revision (Revision(..), Channel(..), build, revisionsOn)
-import Control.Monad ((<=<), (>>))
-import Data.Set (Set)
 import Nix.Versions.Database (Connection, RevisionState(..))
+import Nix.Versions.Types (Commit(..), Config(..))
 
 import qualified Nix.Versions.Database as DB
 import qualified Data.Set as Set
@@ -33,7 +35,9 @@ savePackageVersionsForPeriod
     => Config -> Day -> Day -> m [Either String Revision]
 savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
     DB.withConnection cacheDir dbFile $ \conn -> do
-        allRevisions <- mapConcurrently (revisionsForChannel conn) allChannels
+        key <- newConcKey
+        () <- monitorConcurrency key
+        allRevisions <- limitedConcurrency key $ map (revisionsForChannel conn) allChannels
         return $ concat allRevisions
     where
         allChannels :: [Channel]
@@ -69,7 +73,7 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
                     = map toDay
                     $ Set.toList
                     $ weeksAsked `Set.difference` weeksAvailable revisions
-            mapConcurrently (downloadForDay conn channel) daysNeeded
+            traverse (downloadForDay conn channel) daysNeeded
 
         downloadForDay conn channel day = do
             eCommits <- revisionsOn gitUser channel day
@@ -127,3 +131,62 @@ tryInSequence err l = go (0 :: Int) l
 -- We only download revision data for the weeks of interest
 isWeekOfInterest :: Week -> Bool
 isWeekOfInterest (Week week) = week `mod` 5 == 1
+
+-- | Run the maximum amount of concurrent computations possible, but no more than that.
+limitedConcurrency :: MonadConc m => ConcKey m -> [m a] -> m [a]
+limitedConcurrency ConcKey {maxConcurrency, activeThreads} actions = do
+    asyncs <- foldM runWhenPossible [] actions
+    traverse wait asyncs
+    where
+        -- | Only run the next action if there is an idle CPU core
+        runWhenPossible  acc action = do
+            takeCapability
+            a <- async $ action <* releaseCapability
+            return $ a:acc
+
+        -- | Only run the action if there is an idle CPU core
+        -- withCapability action = do
+        --     takeCapability
+        --     result <- action
+        --     releaseCapability
+        --     return result
+
+        takeCapability = atomically $ do
+            active <- readTVar activeThreads
+            if active < maxConcurrency
+               then writeTVar activeThreads (active + 1)
+               else retry
+
+        releaseCapability = atomically $ do
+            active <- readTVar activeThreads
+            writeTVar activeThreads (active - 1)
+
+
+data ConcKey m = ConcKey
+    { maxConcurrency :: Int
+    , activeThreads  :: TVar (STM m) Int
+    }
+
+newConcKey :: MonadConc m => m (ConcKey m)
+newConcKey = do
+    maxConcurrency <- getNumCapabilities
+    activeThreads  <- atomically $ newTVar 0
+    return $ ConcKey maxConcurrency activeThreads
+
+
+monitorConcurrency :: (MonadIO m, MonadConc m) => ConcKey m -> m ()
+monitorConcurrency  (ConcKey _ activeThreads) =
+    async inform >> return ()
+    where
+        inform = do
+            threadDelay (5 * second)
+            active <- atomically $ readTVar activeThreads
+            liftIO . print $ "Threads active: " <> show active
+            let isFinished = active == 0
+            if not isFinished
+               then inform
+               else return ()
+
+        second = 1000000
+
+

@@ -28,7 +28,6 @@ import Data.Aeson (FromJSON, eitherDecodeFileStrict, parseJSON, withObject, (.:)
 import Data.List (partition)
 import Data.HashMap.Strict (HashMap)
 import Data.Text (unpack, Text)
-import Data.Text.Encoding (encodeUtf8)
 import Data.Time.Calendar (Day, showGregorian)
 import GHC.Generics (Generic)
 import Nix.Versions.Types (GitHubUser(..), Hash(..), Name, Version(..), Commit(..))
@@ -156,7 +155,7 @@ channelBranch = GitBranch . \case
 -- Sorted oldest to newest
 -- Verified commits appear earlier in the list
 commitsUntil :: GitHubUser -> GitBranch -> Day -> IO (Either String [Commit])
-commitsUntil (GitHubUser guser) (GitBranch branch) day = do
+commitsUntil (GitHubUser guser gtoken) (GitBranch branch) day = do
     response <-
         tryJust isHttpException
         $ fmap Req.responseBody
@@ -172,9 +171,10 @@ commitsUntil (GitHubUser guser) (GitBranch branch) day = do
         rearrange :: [GitHubCommit] -> [GitHubCommit]
         rearrange = ((++) <$> fst <*> snd) . partition g_verified . reverse
 
-        options = Req.header "User-Agent" (encodeUtf8 guser)
+        options = Req.header "User-Agent" guser
                <> Req.queryParam "until" (Just $ showGregorian day <> "T23:59:59Z")
                <> Req.queryParam "sha" (Just branch)
+               <> Req.basicAuth guser gtoken
 
         url = Req.https "api.github.com"
             Req./: "repos"

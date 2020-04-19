@@ -6,3 +6,4 @@ saved-versions
 # SQLite Databases
 *.db
 tags
+.env
