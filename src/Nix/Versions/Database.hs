@@ -23,7 +23,9 @@ module Nix.Versions.Database
     ) where
 
 import Control.Concurrent.Async (mapConcurrently_)
-import Control.Exception (catchJust, bracket)
+import Control.Exception (catchJust)
+import Control.Monad.Catch (MonadMask, MonadCatch, bracket)
+import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Int (Int64)
 import Data.Functor ((<&>))
 import Data.Maybe (fromMaybe)
@@ -45,8 +47,8 @@ db_PACKAGE_VERSIONS = "PACKAGE_VERSIONS"
 db_REVISIONS        = "REVISIONS"
 
 -- | Get a connection and prepare database for usage
-connect :: CachePath -> DBFile -> IO Connection
-connect (CachePath dir) (DBFile fname) = do
+connect :: MonadIO m => CachePath -> DBFile -> m Connection
+connect (CachePath dir) (DBFile fname) = liftIO $ do
     conn <- SQL.open $ dir <> "/" <> fname
     -- Enable foreign key constraints.
     -- It's really weird that they would otherwise just not work.
@@ -84,10 +86,10 @@ ensureTablesAreCreated conn = do
                         <> ", FOREIGN KEY (REVISION_HASH) REFERENCES " <> db_REVISIONS <> "(COMMIT_HASH)"
                         <> ")"
 
-disconnect :: Connection -> IO ()
-disconnect (Connection conn) = SQL.close conn
+disconnect :: MonadIO m => Connection -> m ()
+disconnect (Connection conn) = liftIO $ SQL.close conn
 
-withConnection :: CachePath -> DBFile -> (Connection -> IO a) -> IO a
+withConnection :: (MonadMask m, MonadIO m) => CachePath -> DBFile -> (Connection -> m a) -> m a
 withConnection cache file = bracket (connect cache file) disconnect
 
 -------------------------------------------------------------------------------

@@ -10,6 +10,7 @@ module Nix.Versions
 import Control.Monad.Except (liftIO, liftEither, runExceptT, runExcept)
 import Control.Monad (join)
 import Control.Monad.IO.Class (MonadIO(..))
+import Control.Monad.Catch (MonadMask)
 import Control.Concurrent.Classy (MonadConc)
 import Control.Concurrent.Classy.Async (mapConcurrently)
 import Data.Time.Calendar (Day, fromGregorian, toGregorian, showGregorian)
@@ -31,32 +32,33 @@ import qualified Data.Set as Set
 -- | Download lists of packages and their versions
 -- for commits between 'to' and 'from' dates and save them to
 -- the database.
-savePackageVersionsForPeriod :: (MonadConc m, MonadIO m) => Config -> Day -> Day -> m [Either String Revision]
-savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to = do
-    conn      <- liftIO $ DB.connect cacheDir dbFile
-    revisions <- liftIO $ DB.revisions conn
-    let
-        weeksAlreadyInDB :: Set (Year, Week)
-        weeksAlreadyInDB
-            = Set.fromList
-            $ fmap (toWeek . revDate)
-            $ filter wasAttempted
-            $ revisions
+savePackageVersionsForPeriod
+    :: (MonadMask m, MonadConc m, MonadIO m)
+    => Config -> Day -> Day -> m [Either String Revision]
+savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
+    withConnection cacheDir dbFile $ \conn -> do
+        revisions <- liftIO $ DB.revisions conn
+        let
+            weeksAlreadyInDB :: Set (Year, Week)
+            weeksAlreadyInDB
+                = Set.fromList
+                $ fmap (toWeek . revDate)
+                $ filter wasAttempted
+                $ revisions
 
-        weeksAsked
-            = Set.toList . Set.fromList -- Remove repeats
-            $ filter (isWeekOfInterest . snd)
-            $ toWeek <$> [from .. to]
+            weeksAsked
+                = Set.toList . Set.fromList -- Remove repeats
+                $ filter (isWeekOfInterest . snd)
+                $ toWeek <$> [from .. to]
 
-        -- | TODO: Add log of what is being skipped
-        weeksNeeded = filter (not . (`Set.member` weeksAlreadyInDB)) weeksAsked
+            -- | TODO: Add log of what is being skipped
+            weeksNeeded = filter (not . (`Set.member` weeksAlreadyInDB)) weeksAsked
 
-        -- | One day per week of interest
-        daysNeeded = toDay <$> weeksNeeded
+            -- | One day per week of interest
+            daysNeeded = toDay <$> weeksNeeded
 
-    res <- mapConcurrently (downloadForDay conn Nixpkgs_unstable) daysNeeded
-    liftIO $ DB.disconnect conn
-    return res
+        res <- mapConcurrently (downloadForDay conn Nixpkgs_unstable) daysNeeded
+        return res
     where
         wasAttempted (_,_,state) = case state of
             Success         -> True
