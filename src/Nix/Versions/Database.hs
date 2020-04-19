@@ -11,6 +11,7 @@ module Nix.Versions.Database
     , RevisionState(..)
     , connect
     , disconnect
+    , withConnection
 
     -- Write
     , save
@@ -22,7 +23,7 @@ module Nix.Versions.Database
     ) where
 
 import Control.Concurrent.Async (mapConcurrently_)
-import Control.Exception (catchJust)
+import Control.Exception (catchJust, bracket)
 import Data.Int (Int64)
 import Data.Functor ((<&>))
 import Data.Maybe (fromMaybe)
@@ -85,6 +86,9 @@ ensureTablesAreCreated conn = do
 
 disconnect :: Connection -> IO ()
 disconnect (Connection conn) = SQL.close conn
+
+withConnection :: CachePath -> DBFile -> (Connection -> IO a) -> IO a
+withConnection cache file = bracket (connect cache file) disconnect
 
 -------------------------------------------------------------------------------
 -- Read
