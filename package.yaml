@@ -56,8 +56,9 @@ library:
     OverloadedStrings
     NamedFieldPuns
 
-  # ghc-options:
-  #- -Wall
+  ghc-options:
+  - -Wall
+  - -Wno-partial-type-signatures
 
 executables:
   nix-package-versions-exe:

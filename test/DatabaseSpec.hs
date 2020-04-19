@@ -1,14 +1,10 @@
 module DatabaseSpec (spec) where
 
 import Control.Exception (bracket)
-import Control.Exception (evaluate)
-import Data.Text (pack)
 import Data.Time.Calendar (Day(ModifiedJulianDay))
 import Nix.Revision (Revision(..), Package(..), Channel(..))
 import Nix.Versions.Types (DBFile(..), CachePath(..), Hash(..), Version(..), Name(..), Commit(..))
 import System.IO.Temp (withSystemTempDirectory)
-import System.IO.Temp (withSystemTempFile)
-import System.Posix.Files (removeLink)
 import Test.Hspec (Spec, describe, it, shouldBe)
 import qualified Data.HashMap.Strict as HM
 import qualified Nix.Versions.Database as P

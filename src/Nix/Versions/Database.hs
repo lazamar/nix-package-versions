@@ -24,7 +24,7 @@ module Nix.Versions.Database
 
 import Control.Concurrent.Async (mapConcurrently_)
 import Control.Exception (catchJust)
-import Control.Monad.Catch (MonadMask, MonadCatch, bracket)
+import Control.Monad.Catch (MonadMask, bracket)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Int (Int64)
 import Data.Functor ((<&>))
@@ -42,6 +42,7 @@ newtype Connection = Connection SQL.Connection
 
 -- Constants
 
+db_REVISIONS, db_PACKAGE_VERSIONS, db_PACKAGE_NAMES :: SQL.Query
 db_PACKAGE_NAMES    = "PACKAGE_NAMES"
 db_PACKAGE_VERSIONS = "PACKAGE_VERSIONS"
 db_REVISIONS        = "REVISIONS"
@@ -110,9 +111,12 @@ versions (Connection conn) (Name name) = liftIO $ do
 
 -- | Retrieve all revisions available in the database
 -- This will be between one hundred and one thousand.
-revisions :: MonadIO m => Connection -> m [(Day, Revision, RevisionState)]
-revisions (Connection conn) = liftIO $ do
-    results <- SQL.query_ conn ("SELECT * FROM " <> db_REVISIONS)
+revisions :: MonadIO m => Connection -> Channel -> m [(Day, Revision, RevisionState)]
+revisions (Connection conn) channel = liftIO $ do
+    results <- SQL.query
+        conn
+        ("SELECT * FROM " <> db_REVISIONS <> " WHERE CHANNEL = ?")
+        [show channel]
     return $ toInfo <$> results
         where
             toInfo (SQLRevision day revision state) = (day, revision, state)
@@ -133,7 +137,7 @@ save conn represents revision packages = liftIO $ do
     mapConcurrently_ persistPackage (HashMap.toList packages)
     persistRevisionWithState Success
     where
-        Revision channel (Commit hash _) = revision
+        Revision _ (Commit hash _) = revision
 
         persistPackage (name, info) =
             persistVersion conn hash name info
@@ -189,11 +193,6 @@ instance FromRow SQLRevision where
         <*> (SQL.field <&> ModifiedJulianDay . fromInteger)
         <*> (SQL.field <&> read)
         where
-            toBool :: Int64 -> Bool
-            toBool = \case
-                0 -> False
-                _ -> True
-
             construct :: Hash -> Day -> Channel -> Day -> RevisionState -> SQLRevision
             construct hash date channel represents state =
                 SQLRevision represents (Revision channel (Commit hash date)) state

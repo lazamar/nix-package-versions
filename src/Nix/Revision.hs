@@ -22,29 +22,20 @@ module Nix.Revision
     , Channel(..)
     ) where
 
-import Control.Exception (SomeException(..), bracket, handle, tryJust, onException)
-import Control.Concurrent.Async (mapConcurrently)
-import Control.Monad (unless, (<=<), join)
-import Control.Monad.Except (runExceptT, liftEither)
+import Control.Exception (SomeException(..), bracket, handle, tryJust)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Aeson (FromJSON, eitherDecodeFileStrict, parseJSON, withObject, (.:), (.:?), parseJSON)
-import Data.Bifunctor (bimap)
-import Data.Either (isRight)
 import Data.List (partition)
 import Data.HashMap.Strict (HashMap)
-import Data.Maybe (mapMaybe, listToMaybe)
-import Data.Text (pack, unpack, Text)
+import Data.Text (unpack, Text)
 import Data.Text.Encoding (encodeUtf8)
-import Data.Time.Calendar (Day, fromGregorian, toGregorian, showGregorian)
-import Data.Foldable ( find)
+import Data.Time.Calendar (Day, showGregorian)
 import GHC.Generics (Generic)
-import Nix.Versions.Types (GitHubUser(..), CachePath(..), NixConfig(..), Config(..), Hash(..), Name, Version(..), Commit(..))
-import System.Directory (listDirectory)
+import Nix.Versions.Types (GitHubUser(..), Hash(..), Name, Version(..), Commit(..))
 import System.Exit (ExitCode(..))
 import System.IO.Temp (emptySystemTempFile)
 import System.Posix.Files (removeLink)
 import System.Process (readCreateProcessWithExitCode, shell, CreateProcess(..))
-import Text.Read (readMaybe)
 
 import qualified Network.HTTP.Req as Req
 
@@ -87,9 +78,9 @@ instance FromJSON Package where
 -- | Download info for a revision and build a list of all
 -- packages in it. This can take a few minutes.
 build :: MonadIO m => Revision -> m (Either String RevisionPackages)
-build (Revision channel commit) =
+build (Revision _ commit) =
     liftIO $ withTempFile $ \filePath -> do
-        downloadNixVersionsTo filePath
+        _ <- downloadNixVersionsTo filePath
         handle exceptionToEither $ eitherDecodeFileStrict filePath
     where
         -- | Create a temporary file without holding a lock to it.
@@ -194,11 +185,6 @@ commitsUntil (GitHubUser guser) (GitBranch branch) day = do
         isHttpException :: Req.HttpException -> Maybe String
         isHttpException = Just . show
 
-        catching exc
-            = join
-            . liftIO
-            . fmap liftEither
-
 data GitHubRepo = GitHubRepo
     { g_user :: Text
     , g_repo :: Text
@@ -213,12 +199,12 @@ newtype GitBranch = GitBranch Text
 
 instance FromJSON GitHubCommit where
     parseJSON = withObject "GitHubCommit " $ \v ->
-        handle
+        construct
         <$> (v .: "sha")
         <*> (v .: "commit" >>= (.: "committer") >>= (.: "date"))
         <*> (v .: "commit" >>= (.: "verification") >>= (.: "verified"))
        where
-           handle sha date verified = GitHubCommit verified $ Commit (Hash sha) (readGregorian date)
+           construct sha date verified = GitHubCommit verified $ Commit (Hash sha) (readGregorian date)
 
            readGregorian :: String -> Day
            readGregorian = read . take 10
@@ -226,5 +212,5 @@ instance FromJSON GitHubCommit where
 type Url = String
 
 commitUrl :: GitHubRepo -> Commit -> Url
-commitUrl (GitHubRepo user repo) (Commit (Hash hash) date)
+commitUrl (GitHubRepo user repo) (Commit (Hash hash) _)
     = unpack $ "https://github.com/" <> user <> "/" <> repo <> "/archive/" <> hash <> ".tar.gz"

@@ -5,9 +5,7 @@
 module App.Server (run) where
 
 import Control.Monad (mapM_, join)
-import Data.Maybe (fromMaybe)
 import Data.String (fromString)
-import Data.Text (pack)
 import Data.Text.Encoding (decodeUtf8)
 import Data.List (lookup)
 import Network.HTTP.Types (status200, status404)
@@ -73,7 +71,7 @@ pageHome conn request = do
                        then H.p "No results to found"
                        else mapM_ (toRow name) results
 
-        toRow (Name name) (Hash hash, Package description (Version v) _) =
+        toRow (Name name) (Hash hash, Package _ (Version v) _) =
             H.tr do
                 H.td $ H.text name
                 H.td $ H.text v
