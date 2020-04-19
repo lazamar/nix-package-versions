@@ -37,7 +37,7 @@ savePackageVersionsForPeriod
     => Config -> Day -> Day -> m [Either String Revision]
 savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
     withConnection cacheDir dbFile $ \conn -> do
-        revisions <- liftIO $ DB.revisions conn
+        revisions <- DB.revisions conn
         let
             weeksAlreadyInDB :: Set (Year, Week)
             weeksAlreadyInDB
@@ -88,11 +88,11 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
             eRev <- liftIO $ build revision
             case eRev of
                 Left  err -> do
-                    liftIO $ DB.registerInvalidRevision conn day revision
+                    DB.registerInvalidRevision conn day revision
                     return (Left (day, err))
                 Right packages -> do
                     liftIO $ putStrLn $ "Saving Nix result for" <> show revision
-                    liftIO $ DB.save conn day revision packages
+                    DB.save conn day revision packages
                     return $ Right $ revision
 
 newtype Week = Week Int

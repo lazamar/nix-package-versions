@@ -98,8 +98,8 @@ withConnection cache file = bracket (connect cache file) disconnect
 -- | Retrieve all versions available for a package
 -- This will be on the order of the tens, or maximum the
 -- hundreds, so it is fine to just return all of them
-versions :: Connection -> Name -> IO [(Hash, Package)]
-versions (Connection conn) (Name name) = do
+versions :: MonadIO m => Connection -> Name -> m [(Hash, Package)]
+versions (Connection conn) (Name name) = liftIO $ do
     results <- SQL.query
         conn
         ("SELECT * FROM " <> db_PACKAGE_VERSIONS <> " WHERE PACKAGE_NAME = ?")
@@ -110,8 +110,8 @@ versions (Connection conn) (Name name) = do
 
 -- | Retrieve all revisions available in the database
 -- This will be between one hundred and one thousand.
-revisions :: Connection -> IO [(Day, Revision, RevisionState)]
-revisions (Connection conn) = do
+revisions :: MonadIO m => Connection -> m [(Day, Revision, RevisionState)]
+revisions (Connection conn) = liftIO $ do
     results <- SQL.query_ conn ("SELECT * FROM " <> db_REVISIONS)
     return $ toInfo <$> results
         where
@@ -122,13 +122,13 @@ revisions (Connection conn) = do
 
 -- | When there is a problem building the revision this function allows us
 -- to record that in the database so that later we don't try to build it again
-registerInvalidRevision :: Connection -> Day -> Revision -> IO ()
+registerInvalidRevision :: MonadIO m => Connection -> Day -> Revision -> m ()
 registerInvalidRevision conn represents revision =
-    persistRevision conn represents revision InvalidRevision
+    liftIO $ persistRevision conn represents revision InvalidRevision
 
 -- | Save the entire database
-save :: Connection -> Day -> Revision -> RevisionPackages -> IO ()
-save conn represents revision packages = do
+save :: MonadIO m => Connection -> Day -> Revision -> RevisionPackages -> m ()
+save conn represents revision packages = liftIO $ do
     persistRevisionWithState Incomplete
     mapConcurrently_ persistPackage (HashMap.toList packages)
     persistRevisionWithState Success
