@@ -86,12 +86,11 @@ instance FromJSON Package where
 
 -- | Download info for a revision and build a list of all
 -- packages in it. This can take a few minutes.
-build :: Revision -> IO (Either String (Revision, RevisionPackages))
+build :: Revision -> IO (Either String RevisionPackages)
 build (Revision channel commit) =
     withTempFile $ \filePath -> do
         downloadNixVersionsTo filePath
-        packages <- handle exceptionToEither $ eitherDecodeFileStrict filePath
-        return $ (Revision channel commit,) <$> packages
+        handle exceptionToEither $ eitherDecodeFileStrict filePath
     where
         -- | Create a temporary file without holding a lock to it.
         withTempFile f = bracket (emptySystemTempFile "NIX_REVISION") removeLink f

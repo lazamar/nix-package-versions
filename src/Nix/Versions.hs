@@ -88,7 +88,7 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to = do
                 Left  err -> do
                     liftIO $ DB.registerInvalidRevision conn day revision
                     return (Left (day, err))
-                Right (_, packages) -> do
+                Right packages -> do
                     liftIO $ putStrLn $ "Saving Nix result for" <> show revision
                     liftIO $ DB.save conn day revision packages
                     return $ Right $ revision
