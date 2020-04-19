@@ -39,37 +39,37 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
         allChannels :: [Channel]
         allChannels = [minBound..]
 
-        revisionsForChannel :: _ => Connection -> Channel -> m [Either String Revision]
-        revisionsForChannel conn channel = do
-            revisions <- DB.revisions conn channel
-            let
-                weeksAlreadyInDB :: Set (Year, Week)
-                weeksAlreadyInDB
-                    = Set.fromList
-                    $ fmap (toWeek . revDate)
-                    $ filter wasAttempted
-                    $ revisions
+        weeksAsked :: Set (Year, Week)
+        weeksAsked
+            = Set.fromList
+            $ filter (isWeekOfInterest . snd)
+            $ toWeek <$> [from .. to]
 
-                weeksAsked
-                    = Set.toList . Set.fromList -- Remove repeats
-                    $ filter (isWeekOfInterest . snd)
-                    $ toWeek <$> [from .. to]
+        weeksAvailable :: [(Day, Revision, RevisionState)] -> Set (Year, Week)
+        weeksAvailable
+            = Set.fromList
+            . fmap (toWeek . revDate)
+            . filter reachedFinalState
 
-                -- | TODO: Add log of what is being skipped
-                weeksNeeded = filter (not . (`Set.member` weeksAlreadyInDB)) weeksAsked
-
-                -- | One day per week of interest
-                daysNeeded = toDay <$> weeksNeeded
-
-            res <- mapConcurrently (downloadForDay conn channel) daysNeeded
-            return res
-
-        wasAttempted (_,_,state) = case state of
+        -- | Reaching a final state means that it is not worth it trying to
+        -- download that revision again.
+        reachedFinalState (_,_,state) = case state of
             Success         -> True
             InvalidRevision -> True
             Incomplete      -> False
 
         revDate (day, _, _) = day
+
+        revisionsForChannel :: _ => Connection -> Channel -> m [Either String Revision]
+        revisionsForChannel conn channel = do
+            revisions <- DB.revisions conn channel
+            -- TODO: Add log of what is being skipped
+            -- One day per week of interest
+            let daysNeeded
+                    = map toDay
+                    $ Set.toList
+                    $ weeksAsked `Set.difference` weeksAvailable revisions
+            mapConcurrently (downloadForDay conn channel) daysNeeded
 
         downloadForDay conn channel day = do
             eCommits <- revisionsOn gitUser channel day
