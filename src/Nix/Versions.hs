@@ -19,6 +19,7 @@ import Data.Bifunctor (first)
 import Data.Hashable (Hashable)
 import Data.Aeson (encodeFile, eitherDecodeFileStrict)
 import Nix.Versions.Types (CachePath, Commit(..), Config(..))
+import Nix.Revision (Revision(..), Channel(..), build, revisionsOn)
 import Data.Maybe (mapMaybe)
 import Data.Bifunctor (first)
 import Control.Monad ((<=<), (>>))
@@ -26,12 +27,11 @@ import Nix.Versions.Database as DB
 import Data.Set (Set)
 
 import qualified Data.Set as Set
-import qualified Nix.Revision as Revision
 
 -- | Download lists of packages and their versions
 -- for commits between 'to' and 'from' dates and save them to
 -- the database.
-savePackageVersionsForPeriod :: (MonadConc m, MonadIO m) => Config -> Day -> Day -> m [Either String Commit]
+savePackageVersionsForPeriod :: (MonadConc m, MonadIO m) => Config -> Day -> Day -> m [Either String Revision]
 savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to = do
     conn      <- liftIO $ DB.connect cacheDir dbFile
     revisions <- liftIO $ DB.revisions conn
@@ -54,7 +54,7 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to = do
         -- | One day per week of interest
         daysNeeded = toDay <$> weeksNeeded
 
-    res <- mapConcurrently (downloadForDay conn Revision.Nixpkgs_unstable) daysNeeded
+    res <- mapConcurrently (downloadForDay conn Nixpkgs_unstable) daysNeeded
     liftIO $ DB.disconnect conn
     return res
     where
@@ -66,7 +66,7 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to = do
         revDate (day, _, _) = day
 
         downloadForDay conn channel day = do
-            eCommits <- liftIO $ Revision.commitsUntil gitUser (Revision.channelBranch channel) day
+            eCommits <- liftIO $ revisionsOn gitUser channel day
             case eCommits of
                 Left err -> return $ Left $ "Unable to get commits from GitHub for " <> show day <> ": " <> show err
                 Right commits ->
@@ -74,24 +74,24 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to = do
                     let maxAttempts = 20
                     in
                     tryInSequence (day, "Unable to create dervation after " <> show maxAttempts <> " attempts.")
-                        $ fmap (download conn channel day <=< announce day)
+                        $ fmap (download conn day <=< announce day)
                         $ take maxAttempts
                         $ zip [1..] commits
 
-        announce day (tryCount, commit@(Commit hash _)) = do
+        announce day (tryCount, rev@(Revision _ (Commit hash _))) = do
             liftIO $ putStrLn $ "Attempt " <> show tryCount <> ". Downloading files for " <> showGregorian day <> ". " <> show hash
-            return commit
+            return rev
 
-        download conn channel day commit = do
-            eRev <- liftIO $ Revision.build channel commit
+        download conn day revision = do
+            eRev <- liftIO $ build revision
             case eRev of
                 Left  err -> do
-                    liftIO $ DB.registerInvalidRevision conn day (Revision.Revision channel commit)
+                    liftIO $ DB.registerInvalidRevision conn day revision
                     return (Left (day, err))
-                Right (rev, packages) -> do
-                    liftIO $ putStrLn $ "Saving Nix result for" <> show commit
-                    liftIO $ DB.save conn day rev packages
-                    return $ Right $ Revision.commit rev
+                Right (_, packages) -> do
+                    liftIO $ putStrLn $ "Saving Nix result for" <> show revision
+                    liftIO $ DB.save conn day revision packages
+                    return $ Right $ revision
 
 newtype Week = Week Int
     deriving (Eq, Show, Ord)

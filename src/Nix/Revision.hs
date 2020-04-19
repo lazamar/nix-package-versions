@@ -15,8 +15,7 @@
 
 module Nix.Revision
     ( build
-    , commitsUntil
-    , channelBranch
+    , revisionsOn
     , Revision(..)
     , RevisionPackages
     , Package(..)
@@ -87,8 +86,8 @@ instance FromJSON Package where
 
 -- | Download info for a revision and build a list of all
 -- packages in it. This can take a few minutes.
-build ::  Channel -> Commit -> IO (Either String (Revision, RevisionPackages))
-build channel commit =
+build :: Revision -> IO (Either String (Revision, RevisionPackages))
+build (Revision channel commit) =
     withTempFile $ \filePath -> do
         downloadNixVersionsTo filePath
         packages <- handle exceptionToEither $ eitherDecodeFileStrict filePath
@@ -131,6 +130,21 @@ build channel commit =
               ExitSuccess   -> Right stdOut
               ExitFailure _ -> Left stdErr
 
+-------------------------------------------------------------------------------
+-- GitHub + Nix
+
+-- | Last revisions registered for given day
+revisionsOn :: GitHubUser -> Channel -> Day -> IO (Either String [Revision])
+revisionsOn guser channel day
+    = fmap (fmap $ fmap $ Revision channel)
+    $ commitsUntil guser (channelBranch channel) day
+
+gnixpkgs :: GitHubRepo
+gnixpkgs = GitHubRepo
+    { g_user = "NixOS"
+    , g_repo = "nixpkgs"
+    }
+
 channelBranch :: Channel -> GitBranch
 channelBranch = GitBranch . \case
     Nixpkgs_18_09    -> "nixpkgs-18.09-darwin"
@@ -147,7 +161,7 @@ channelBranch = GitBranch . \case
 -------------------------------------------------------------------------------
 -- GitHub
 
--- | Fetch a list of until end of Day onwards
+-- | Fetch a list of commits until end of Day
 -- Sorted oldest to newest
 -- Verified commits appear earlier in the list
 commitsUntil :: GitHubUser -> GitBranch -> Day -> IO (Either String [Commit])
@@ -184,12 +198,6 @@ commitsUntil (GitHubUser guser) (GitBranch branch) day = do
             = join
             . liftIO
             . fmap liftEither
-
-gnixpkgs :: GitHubRepo
-gnixpkgs = GitHubRepo
-    { g_user = "NixOS"
-    , g_repo = "nixpkgs"
-    }
 
 data GitHubRepo = GitHubRepo
     { g_user :: Text
