@@ -4,7 +4,7 @@ import Control.Exception (bracket)
 import Control.Exception (evaluate)
 import Data.Text (pack)
 import Data.Time.Calendar (Day(ModifiedJulianDay))
-import Nix.Revision (Revision(..), Package(..))
+import Nix.Revision (Revision(..), Package(..), Channel(..))
 import Nix.Versions.Types (DBFile(..), CachePath(..), Hash(..), Version(..), Name(..), Commit(..))
 import System.IO.Temp (withSystemTempDirectory)
 import System.IO.Temp (withSystemTempFile)
@@ -31,7 +31,7 @@ spec = do
             pkg   = Package Nothing (Version "1.0") Nothing
             commit = Commit (Hash "hash") (ModifiedJulianDay 10)
             packages = HM.fromList [(pname, pkg)]
-            revision = Revision commit
+            revision = Revision Nixpkgs_unstable commit
 
         it "can save and load a revision" $ do
             overDatabase $ \conn -> do

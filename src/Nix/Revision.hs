@@ -19,7 +19,7 @@ module Nix.Revision
     , Revision(..)
     , RevisionPackages
     , Package(..)
-    , Channel
+    , Channel(..)
     ) where
 
 import Control.Exception (SomeException(..), bracket, handle, tryJust, onException)
@@ -61,11 +61,12 @@ data Channel
     | Nixos_19_09
     | Nixos_20_03
     | Nixos_unstable
-    deriving (Show, Eq, Bounded, Enum)
+    deriving (Show, Read, Eq, Bounded, Enum)
 
 -- | The contents of a json file with package information
 data Revision = Revision
-    { commit   :: Commit
+    { channel  :: Channel
+    , commit   :: Commit
     } deriving (Show, Generic)
 
 type RevisionPackages = HashMap Name Package
@@ -85,12 +86,12 @@ instance FromJSON Package where
 
 -- | Download info for a revision and build a list of all
 -- packages in it. This can take a few minutes.
-build ::  Commit -> IO (Either String (Revision, RevisionPackages))
-build commit =
+build ::  Channel -> Commit -> IO (Either String (Revision, RevisionPackages))
+build channel commit =
     withTempFile $ \filePath -> do
         downloadNixVersionsTo filePath
         packages <- handle exceptionToEither $ eitherDecodeFileStrict filePath
-        return $ (Revision commit,) <$> packages
+        return $ (Revision channel commit,) <$> packages
     where
         -- | Create a temporary file without holding a lock to it.
         withTempFile f = bracket (emptySystemTempFile "NIX_REVISION") removeLink f

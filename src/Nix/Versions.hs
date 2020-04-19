@@ -54,7 +54,7 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to = do
         -- | One day per week of interest
         daysNeeded = toDay <$> weeksNeeded
 
-    res <- mapConcurrently (f conn) daysNeeded
+    res <- mapConcurrently (downloadForDay conn Revision.Nixpkgs_unstable) daysNeeded
     liftIO $ DB.disconnect conn
     return res
     where
@@ -65,7 +65,7 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to = do
 
         revDate (day, _, _) = day
 
-        f conn day = do
+        downloadForDay conn channel day = do
             eCommits <- liftIO $ Revision.commitsUntil gitUser day
             case eCommits of
                 Left err -> return $ Left $ "Unable to get commits from GitHub for " <> show day <> ": " <> show err
@@ -74,7 +74,7 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to = do
                     let maxAttempts = 20
                     in
                     tryInSequence (day, "Unable to create dervation after " <> show maxAttempts <> " attempts.")
-                        $ fmap (download conn day <=< announce day)
+                        $ fmap (download conn channel day <=< announce day)
                         $ take maxAttempts
                         $ zip [1..] commits
 
@@ -82,11 +82,11 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to = do
             liftIO $ putStrLn $ "Attempt " <> show tryCount <> ". Downloading files for " <> showGregorian day <> ". " <> show hash
             return commit
 
-        download conn day commit = do
-            eRev <- liftIO $ Revision.build commit
+        download conn channel day commit = do
+            eRev <- liftIO $ Revision.build channel commit
             case eRev of
                 Left  err -> do
-                    liftIO $ DB.registerInvalidRevision conn day (Revision.Revision commit)
+                    liftIO $ DB.registerInvalidRevision conn day (Revision.Revision channel commit)
                     return (Left (day, err))
                 Right (rev, packages) -> do
                     liftIO $ putStrLn $ "Saving Nix result for" <> show commit

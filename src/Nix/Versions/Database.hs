@@ -29,7 +29,7 @@ import Data.Maybe (fromMaybe)
 import Data.Text (Text, pack, unpack)
 import Data.Time.Calendar (Day(..), toModifiedJulianDay)
 import Database.SQLite.Simple (ToRow(toRow), FromRow(fromRow), SQLData(..))
-import Nix.Revision (Revision(..), RevisionPackages, Package(..))
+import Nix.Revision (Channel, Revision(..), RevisionPackages, Package(..))
 import Nix.Versions.Types (CachePath(..), DBFile(..), Hash(..), Version(..), Name(..), Commit(..))
 
 import qualified Data.HashMap.Strict as HashMap
@@ -59,6 +59,7 @@ ensureTablesAreCreated conn = do
                         -- | Details about the Revision's commit
                         <> "( COMMIT_HASH       TEXT        NOT NULL PRIMARY KEY"
                         <> ", COMMIT_DAY        INTEGER     NOT NULL"
+                        <> ", CHANNEL           TEXT        NOT NULL" -- TODO: Foreign key
                         -- | Even though the commit might have been done in a certain date,
                         -- we added it to the database to represent the state of nixpkgs
                         -- on a specific date, which may be different from the exact commit date.
@@ -103,12 +104,12 @@ versions (Connection conn) (Name name) = do
 
 -- | Retrieve all revisions available in the database
 -- This will be between one hundred and one thousand.
-revisions :: Connection -> IO [(Day, Commit, RevisionState)]
+revisions :: Connection -> IO [(Day, Revision, RevisionState)]
 revisions (Connection conn) = do
     results <- SQL.query_ conn ("SELECT * FROM " <> db_REVISIONS)
     return $ toInfo <$> results
         where
-            toInfo (SQLRevision day commit state) = (day, commit, state)
+            toInfo (SQLRevision day revision state) = (day, revision, state)
 
 -------------------------------------------------------------------------------
 -- Write
@@ -126,7 +127,7 @@ save conn represents revision packages = do
     mapConcurrently_ persistPackage (HashMap.toList packages)
     persistRevisionWithState Success
     where
-        Revision (Commit hash _) = revision
+        Revision channel (Commit hash _) = revision
 
         persistPackage (name, info) =
             persistVersion conn hash name info
@@ -136,10 +137,10 @@ save conn represents revision packages = do
 
 
 persistRevision :: Connection -> Day -> Revision -> RevisionState -> IO ()
-persistRevision (Connection conn) represents (Revision commit) state =
+persistRevision (Connection conn) represents revision state =
     SQL.execute conn
-            ("INSERT OR REPLACE INTO " <> db_REVISIONS <> " VALUES (?,?,?,?)")
-            (SQLRevision represents commit state)
+            ("INSERT OR REPLACE INTO " <> db_REVISIONS <> " VALUES (?,?,?,?,?)")
+            (SQLRevision represents revision state)
 
 -- | Save the version info of a package in the database
 persistVersion :: Connection -> Hash -> Name -> Package -> IO ()
@@ -172,12 +173,13 @@ data RevisionState
     | InvalidRevision    -- ^ This revision cannot be built. It is not worth trying again.
     deriving (Show, Eq, Enum, Read)
 
-data SQLRevision = SQLRevision Day Commit RevisionState
+data SQLRevision = SQLRevision Day Revision RevisionState
 
 instance FromRow SQLRevision where
-    fromRow = (\hash date represents state -> SQLRevision represents (Commit hash date) state)
+    fromRow = construct
         <$> (SQL.field <&> Hash)
         <*> (SQL.field <&> ModifiedJulianDay . fromInteger)
+        <*> (SQL.field <&> read)
         <*> (SQL.field <&> ModifiedJulianDay . fromInteger)
         <*> (SQL.field <&> read)
         where
@@ -186,10 +188,15 @@ instance FromRow SQLRevision where
                 0 -> False
                 _ -> True
 
+            construct :: Hash -> Day -> Channel -> Day -> RevisionState -> SQLRevision
+            construct hash date channel represents state =
+                SQLRevision represents (Revision channel (Commit hash date)) state
+
 instance ToRow SQLRevision where
-    toRow (SQLRevision represents (Commit hash date) state) =
+    toRow (SQLRevision represents (Revision channel (Commit hash date)) state) =
         [ SQLText    $ fromHash hash                   -- ^ COMMIT_HASH
         , SQLInteger $ dayToInt date                   -- ^ COMMIT_DAY
+        , SQLText    $ pack $ show channel             -- ^ CHANNEL
         , SQLInteger $ dayToInt represents             -- ^ REPRESENTS_DAY
         , SQLText    $ pack $ show state               -- ^ STATE
         ]
