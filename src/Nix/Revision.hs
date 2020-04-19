@@ -86,9 +86,9 @@ instance FromJSON Package where
 
 -- | Download info for a revision and build a list of all
 -- packages in it. This can take a few minutes.
-build :: Revision -> IO (Either String RevisionPackages)
+build :: MonadIO m => Revision -> m (Either String RevisionPackages)
 build (Revision channel commit) =
-    withTempFile $ \filePath -> do
+    liftIO $ withTempFile $ \filePath -> do
         downloadNixVersionsTo filePath
         handle exceptionToEither $ eitherDecodeFileStrict filePath
     where
@@ -133,9 +133,10 @@ build (Revision channel commit) =
 -- GitHub + Nix
 
 -- | Last revisions registered for given day
-revisionsOn :: GitHubUser -> Channel -> Day -> IO (Either String [Revision])
+revisionsOn :: MonadIO m => GitHubUser -> Channel -> Day -> m (Either String [Revision])
 revisionsOn guser channel day
-    = fmap (fmap $ fmap $ Revision channel)
+    = liftIO
+    $ fmap (fmap $ fmap $ Revision channel)
     $ commitsUntil guser (channelBranch channel) day
 
 gnixpkgs :: GitHubRepo

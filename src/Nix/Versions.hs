@@ -68,7 +68,7 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
         revDate (day, _, _) = day
 
         downloadForDay conn channel day = do
-            eCommits <- liftIO $ revisionsOn gitUser channel day
+            eCommits <- revisionsOn gitUser channel day
             case eCommits of
                 Left err -> return $ Left $ "Unable to get commits from GitHub for " <> show day <> ": " <> show err
                 Right commits ->
@@ -85,7 +85,7 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
             return rev
 
         download conn day revision = do
-            eRev <- liftIO $ build revision
+            eRev <- build revision
             case eRev of
                 Left  err -> do
                     DB.registerInvalidRevision conn day revision
