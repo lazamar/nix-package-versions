@@ -16,6 +16,7 @@
 module Nix.Revision
     ( build
     , commitsUntil
+    , channelBranch
     , Revision(..)
     , RevisionPackages
     , Package(..)
@@ -149,8 +150,8 @@ channelBranch = GitBranch . \case
 -- | Fetch a list of until end of Day onwards
 -- Sorted oldest to newest
 -- Verified commits appear earlier in the list
-commitsUntil :: GitHubUser -> Day -> IO (Either String [Commit])
-commitsUntil (GitHubUser guser) day = do
+commitsUntil :: GitHubUser -> GitBranch -> Day -> IO (Either String [Commit])
+commitsUntil (GitHubUser guser) (GitBranch branch) day = do
     response <-
         tryJust isHttpException
         $ fmap Req.responseBody
@@ -168,7 +169,7 @@ commitsUntil (GitHubUser guser) day = do
 
         options = Req.header "User-Agent" (encodeUtf8 guser)
                <> Req.queryParam "until" (Just $ showGregorian day <> "T23:59:59Z")
-               <> Req.queryParam "sha" (Just ("nixpkgs-unstable" :: String))
+               <> Req.queryParam "sha" (Just branch)
 
         url = Req.https "api.github.com"
             Req./: "repos"
