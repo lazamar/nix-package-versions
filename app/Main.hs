@@ -1,5 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 module Main where
 
@@ -8,6 +10,8 @@ import Data.Time.Calendar (Day)
 import Data.Text (pack)
 import Nix.Versions.Types (DBFile(..),GitHubUser(..), CachePath(..), Config(..), Name(..))
 import Control.Monad (mapM_)
+import Control.Monad.Log2 (runLoggerT, pretty)
+import Control.Monad.Log (logInfo)
 
 import qualified App.Server as Server
 import qualified Data.Map as Map
@@ -23,15 +27,18 @@ to = read "2019-04-01"
 
 main :: IO ()
 main = do
-    -- Server.run config
+    --
     downloadRevisions
-
 
 downloadRevisions :: IO ()
 downloadRevisions = do
     config <- getConfig
-    result <- V.savePackageVersionsForPeriod config from to
-    mapM_ print result
+    runLoggerT (putStrLn . pretty) $ do
+        result <- V.savePackageVersionsForPeriod config from to
+        mapM_ (logInfo . show) result
+
+runServer :: IO ()
+runServer = Server.run =<< getConfig
 
 findVersion  :: IO ()
 findVersion = do
@@ -65,4 +72,3 @@ dotenv = Map.fromList . fmap toEntry . filter isValid . lines <$> readFile ".env
         toEntry = fmap tail . span (/= '=')
 
         isValid s = not ("#" `isPrefixOf` s) && not (null s)
-

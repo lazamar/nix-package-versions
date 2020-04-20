@@ -49,6 +49,7 @@ dependencies:
 - http-types
 - concurrency
 - logging-effect
+- transformers
 
 library:
   source-dirs: src

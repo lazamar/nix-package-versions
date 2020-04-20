@@ -3,6 +3,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE PartialTypeSignatures #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Nix.Versions
     ( savePackageVersionsForPeriod
@@ -16,6 +17,7 @@ import Control.Monad ((<=<), (>>), foldM)
 import Control.Monad.Catch (MonadMask)
 import Control.Monad.Except (liftIO )
 import Control.Monad.IO.Class (MonadIO(..))
+import Control.Monad.Log (MonadLog, WithSeverity)
 import Data.Hashable (Hashable)
 import Data.Set (Set)
 import Data.Text (pack)
@@ -32,7 +34,7 @@ import qualified Data.Set as Set
 -- for commits between 'to' and 'from' dates and save them to
 -- the database.
 savePackageVersionsForPeriod
-    :: (MonadMask m, MonadConc m, MonadIO m)
+    :: (MonadMask m, MonadConc m, MonadIO m, MonadLog (WithSeverity String) m)
     => Config -> Day -> Day -> m [Either String Revision]
 savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
     DB.withConnection cacheDir dbFile $ \conn -> do
