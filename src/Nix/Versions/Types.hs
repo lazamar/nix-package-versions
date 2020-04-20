@@ -65,10 +65,10 @@ newtype Version = Version { fromVersion :: Text }
 
 -- | A commit hash
 newtype Hash = Hash { fromHash :: Text }
-    deriving (Eq, Show, Generic, FromJSON, ToJSON)
+    deriving (Eq, Show, Generic, FromJSON, ToJSON, Ord)
 
 -- A local clone of a git repository
 data Repo = Repo FilePath
 
 data Commit = Commit Hash Day
-    deriving (Show, Eq)
+    deriving (Show, Eq, Ord)

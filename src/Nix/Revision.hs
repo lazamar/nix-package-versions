@@ -51,13 +51,13 @@ data Channel
     | Nixos_19_09
     | Nixos_20_03
     | Nixos_unstable
-    deriving (Show, Read, Eq, Bounded, Enum)
+    deriving (Show, Read, Eq, Bounded, Enum, Ord)
 
 -- | The contents of a json file with package information
 data Revision = Revision
     { channel  :: Channel
     , commit   :: Commit
-    } deriving (Show, Generic)
+    } deriving (Show, Generic, Ord, Eq)
 
 type RevisionPackages = HashMap Name Package
 

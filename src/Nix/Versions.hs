@@ -10,7 +10,7 @@ module Nix.Versions
 
 import Control.Applicative ((<*))
 import Control.Concurrent.Classy.Async (async, wait)
-import Control.Monad.Conc.Class (MonadConc, STM, atomically, getNumCapabilities, threadDelay)
+import Control.Monad.Conc.Class (MonadConc, STM, atomically, getNumCapabilities)
 import Control.Monad.STM.Class (TVar, newTVar, readTVar, writeTVar, retry)
 import Control.Monad ((<=<), (>>), foldM)
 import Control.Monad.Catch (MonadMask)
@@ -18,11 +18,12 @@ import Control.Monad.Except (liftIO )
 import Control.Monad.IO.Class (MonadIO(..))
 import Data.Hashable (Hashable)
 import Data.Set (Set)
+import Data.Text (pack)
 import Data.Time.Calendar (Day, showGregorian)
 import Data.Time.Calendar.WeekDate (toWeekDate, fromWeekDate)
 import Nix.Revision (Revision(..), Channel(..), build, revisionsOn)
 import Nix.Versions.Database (Connection, RevisionState(..))
-import Nix.Versions.Types (Commit(..), Config(..))
+import Nix.Versions.Types (Hash(..), Commit(..), Config(..))
 
 import qualified Nix.Versions.Database as DB
 import qualified Data.Set as Set
@@ -36,7 +37,6 @@ savePackageVersionsForPeriod
 savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
     DB.withConnection cacheDir dbFile $ \conn -> do
         key <- newConcKey
-        () <- monitorConcurrency key
         allRevisions <- limitedConcurrency key $ map (revisionsForChannel conn) allChannels
         return $ concat allRevisions
     where
@@ -49,6 +49,17 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
             $ filter (isWeekOfInterest . snd)
             $ toWeek <$> [from .. to]
 
+        triedRevisions :: [(Day, Revision, RevisionState)] -> Set Revision
+        triedRevisions
+            = Set.fromList
+            . fmap (\(_,rev,_) -> rev)
+            . filter reachedFinalState
+
+        -- TODO: Currently any week with a revision that reached the final state
+        -- is considered to be available. We want to change that so that a week
+        -- is available if it either:
+        --  - Has one Successful revision
+        --  - Has five unsuccessful revisions
         weeksAvailable :: [(Day, Revision, RevisionState)] -> Set (Year, Week)
         weeksAvailable
             = Set.fromList
@@ -69,35 +80,47 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
             revisions <- DB.revisions conn channel
             -- TODO: Add log of what is being skipped
             -- One day per week of interest
-            let daysNeeded
+            let alreadyTried = triedRevisions revisions
+                daysNeeded
                     = map toDay
                     $ Set.toList
                     $ weeksAsked `Set.difference` weeksAvailable revisions
-            traverse (downloadForDay conn channel) daysNeeded
+            traverse (downloadForDay conn channel alreadyTried) daysNeeded
 
-        downloadForDay conn channel day = do
-            eCommits <- revisionsOn gitUser channel day
-            case eCommits of
-                Left err -> return $ Left $ "Unable to get commits from GitHub for " <> show day <> ": " <> show err
-                Right commits ->
-                    -- We will try only a few commits. If they don't succeed we give up on that revision.
+        downloadForDay conn channel alreadyTried day = do
+            eRevisions <- revisionsOn gitUser channel day
+            case eRevisions of
+                Left err ->
+                    return $ Left $ "Unable to get commits from GitHub for " <> show day <> ": " <> show err
+
+                Right [] -> do
+                    DB.registerInvalidRevision conn day (Revision channel (Commit (Hash $ pack $ show day) day))
+                    let msg = "No commits found for " <> show day
+                    liftIO $ putStrLn msg
+                    return $ Left msg
+
+                Right revisions ->
+                    -- We will try only a few revisions. If they don't succeed we give up on that revision.
                     let maxAttempts = 20
                     in
-                    tryInSequence (day, "Unable to create dervation after " <> show maxAttempts <> " attempts.")
+                    tryInSequence (day, channel, "Unable to create dervation after " <> show maxAttempts <> " attempts.")
                         $ fmap (download conn day <=< announce day)
                         $ take maxAttempts
-                        $ zip ([1..] :: [Int]) commits
+                        $ zip [1..]
+                        $ filter (not . (`Set.member` alreadyTried))
+                        $ revisions
 
+        announce :: _ => Day -> (Int, Revision) -> m Revision
         announce day (tryCount, rev@(Revision _ (Commit hash _))) = do
             liftIO $ putStrLn $ "Attempt " <> show tryCount <> ". Downloading files for " <> showGregorian day <> ". " <> show hash
             return rev
 
-        download conn day revision = do
+        download conn day revision@(Revision channel _) = do
             eRev <- build revision
             case eRev of
                 Left  err -> do
                     DB.registerInvalidRevision conn day revision
-                    return (Left (day, err))
+                    return (Left (day, channel, err))
                 Right packages -> do
                     liftIO $ putStrLn $ "Saving Nix result for" <> show revision
                     DB.save conn day revision packages
@@ -132,6 +155,9 @@ tryInSequence err l = go (0 :: Int) l
 isWeekOfInterest :: Week -> Bool
 isWeekOfInterest (Week week) = week `mod` 5 == 1
 
+----------------------------------------------------------------------------------------------
+-- Concurrency
+
 -- | Run the maximum amount of concurrent computations possible, but no more than that.
 limitedConcurrency :: MonadConc m => ConcKey m -> [m a] -> m [a]
 limitedConcurrency ConcKey {maxConcurrency, activeThreads} actions = do
@@ -143,13 +169,6 @@ limitedConcurrency ConcKey {maxConcurrency, activeThreads} actions = do
             takeCapability
             a <- async $ action <* releaseCapability
             return $ a:acc
-
-        -- | Only run the action if there is an idle CPU core
-        -- withCapability action = do
-        --     takeCapability
-        --     result <- action
-        --     releaseCapability
-        --     return result
 
         takeCapability = atomically $ do
             active <- readTVar activeThreads
@@ -172,21 +191,4 @@ newConcKey = do
     maxConcurrency <- getNumCapabilities
     activeThreads  <- atomically $ newTVar 0
     return $ ConcKey maxConcurrency activeThreads
-
-
-monitorConcurrency :: (MonadIO m, MonadConc m) => ConcKey m -> m ()
-monitorConcurrency  (ConcKey _ activeThreads) =
-    async inform >> return ()
-    where
-        inform = do
-            threadDelay (5 * second)
-            active <- atomically $ readTVar activeThreads
-            liftIO . print $ "Threads active: " <> show active
-            let isFinished = active == 0
-            if not isFinished
-               then inform
-               else return ()
-
-        second = 1000000
-
 

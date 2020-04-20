@@ -14,7 +14,6 @@ import qualified Data.Map as Map
 import qualified Nix.Versions.Database as Persistent
 import qualified Nix.Versions as V
 import qualified Data.ByteString.Char8 as B
-import GHC.Conc
 
 from :: Day
 from = read "2014-01-01"
@@ -25,10 +24,7 @@ to = read "2019-04-01"
 main :: IO ()
 main = do
     -- Server.run config
-    --downloadRevisions
-    --downloadRevisions
-    cap <- getNumCapabilities
-    print $ "Capabilities count: "<> show cap
+    downloadRevisions
 
 
 downloadRevisions :: IO ()
