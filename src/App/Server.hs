@@ -86,7 +86,7 @@ pageHome conn request = do
                     H.th "Revision"
                 H.tbody $
                     if null results
-                       then H.p "No results to found"
+                       then H.p "No results found"
                        else mapM_ (toRow name) results
 
         toRow (Name name) (Hash hash, Package _ (Version v) _) =
