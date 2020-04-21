@@ -2,7 +2,7 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE TupleSections #-}
 
-module App.Server (run) where
+module App.Server (run, Port(..)) where
 
 import Control.Monad (mapM_, join)
 import Data.Foldable (traverse_)
@@ -26,9 +26,11 @@ import qualified Data.Text as Text
 
 import qualified Nix.Versions.Database as Persistent
 
-run :: Config -> IO ()
-run config = do
-    let port = 8080
+newtype Port = Port Int
+    deriving (Show, Eq, Read)
+
+run :: Port -> Config -> IO ()
+run (Port port) config = do
     conn <- Persistent.connect (config_cacheDirectory config) (config_databaseFile config)
     putStrLn $ "Running server on port " <> show port
     Warp.run port (app conn)

@@ -50,6 +50,7 @@ dependencies:
 - concurrency
 - logging-effect
 - transformers
+- optparse-applicative
 
 library:
   source-dirs: src
