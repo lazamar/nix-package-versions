@@ -160,9 +160,11 @@ isWeekOfInterest (Week week) = week `mod` 5 == 1
 ----------------------------------------------------------------------------------------------
 -- Concurrency
 
+limitedConcurrency _ = sequence
+
 -- | Run the maximum amount of concurrent computations possible, but no more than that.
-limitedConcurrency :: MonadConc m => ConcKey m -> [m a] -> m [a]
-limitedConcurrency ConcKey {maxConcurrency, activeThreads} actions = do
+temp_limitedConcurrency :: MonadConc m => ConcKey m -> [m a] -> m [a]
+temp_limitedConcurrency ConcKey {maxConcurrency, activeThreads} actions = do
     asyncs <- foldM runWhenPossible [] actions
     traverse wait asyncs
     where
