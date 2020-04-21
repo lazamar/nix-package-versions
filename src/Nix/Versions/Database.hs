@@ -61,7 +61,7 @@ ensureTablesAreCreated :: SQL.Connection -> IO ()
 ensureTablesAreCreated conn = do
     SQL.execute_ conn $ "CREATE TABLE IF NOT EXISTS  " <> db_REVISIONS <> " "
                         -- | Details about the Revision's commit
-                        <> "( COMMIT_HASH       TEXT        NOT NULL PRIMARY KEY"
+                        <> "( COMMIT_HASH       TEXT        NOT NULL"
                         <> ", COMMIT_DAY        INTEGER     NOT NULL"
                         <> ", CHANNEL           TEXT        NOT NULL" -- TODO: Foreign key
                         -- | Even though the commit might have been done in a certain date,
@@ -70,6 +70,8 @@ ensureTablesAreCreated conn = do
                         <> ", REPRESENTS_DAY    INTEGER     NOT NULL"
                         -- | Whether we were able to successfully add all Revision packages to the table
                         <> ", STATE             TEXT        NOT NULL"
+                        -- The same commit hash can be used for multiple channels
+                        <> ", PRIMARY KEY (COMMIT_HASH, CHANNEL)"
                         <> ")"
 
     SQL.execute_ conn $ "CREATE TABLE IF NOT EXISTS  " <> db_PACKAGE_NAMES <> " "
