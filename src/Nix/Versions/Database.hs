@@ -15,11 +15,12 @@ module Nix.Versions.Database
 
     -- Write
     , save
-    , registerInvalidRevision
+    , saveRevision
 
     -- Read
     , versions
     , revisions
+    , revisionsByHash
     ) where
 
 import Control.Concurrent.Async (mapConcurrently_)
@@ -86,7 +87,6 @@ ensureTablesAreCreated conn = do
                         <> ", NIXPATH       TEXT"
                         <> ", PRIMARY KEY (PACKAGE_NAME, VERSION_NAME)"
                         <> ", FOREIGN KEY (PACKAGE_NAME) REFERENCES " <> db_PACKAGE_NAMES <> "(PACKAGE_NAME)"
-                        <> ", FOREIGN KEY (REVISION_HASH) REFERENCES " <> db_REVISIONS <> "(COMMIT_HASH)"
                         <> ")"
 
 disconnect :: MonadIO m => Connection -> m ()
@@ -107,9 +107,9 @@ versions (Connection conn) (Name name) = liftIO $ do
         conn
         ("SELECT * FROM " <> db_PACKAGE_VERSIONS <> " WHERE PACKAGE_NAME = ?")
         [unpack name]
-    return $ toInfo <$> results
+    return $ toVersionInfo <$> results
         where
-            toInfo (SQLPackageVersion (_, pkg, hash)) = (hash, pkg)
+            toVersionInfo  (SQLPackageVersion (_, pkg, hash)) = (hash, pkg)
 
 -- | Retrieve all revisions available in the database
 -- This will be between one hundred and one thousand.
@@ -120,17 +120,26 @@ revisions (Connection conn) channel = liftIO $ do
         ("SELECT * FROM " <> db_REVISIONS <> " WHERE CHANNEL = ?")
         [show channel]
     return $ toInfo <$> results
-        where
-            toInfo (SQLRevision day revision state) = (day, revision, state)
+
+revisionsByHash :: MonadIO m => Connection -> Hash ->  m [(Day, Revision, RevisionState)]
+revisionsByHash (Connection conn) (Hash hash) = liftIO $ do
+    results <- SQL.query
+        conn
+        ("SELECT * FROM " <> db_REVISIONS <> " WHERE COMMIT_HASH = ?")
+        [show hash]
+    return $ toInfo <$> results
+
+toInfo :: SQLRevision -> (Day, Revision, RevisionState)
+toInfo (SQLRevision day revision state) = (day, revision, state)
 
 -------------------------------------------------------------------------------
 -- Write
 
 -- | When there is a problem building the revision this function allows us
 -- to record that in the database so that later we don't try to build it again
-registerInvalidRevision :: MonadIO m => Connection -> Day -> Revision -> m ()
-registerInvalidRevision conn represents revision =
-    liftIO $ persistRevision conn represents revision InvalidRevision
+saveRevision :: MonadIO m => Connection -> Day -> Revision -> RevisionState -> m ()
+saveRevision conn represents revision state =
+    liftIO $ persistRevision conn represents revision state
 
 -- | Save the entire database
 save :: MonadIO m => Connection -> Day -> Revision -> RevisionPackages -> m ()

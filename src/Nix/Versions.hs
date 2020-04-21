@@ -18,7 +18,9 @@ import Control.Monad.Catch (MonadMask)
 import Control.Monad.Except (liftIO )
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Log (MonadLog, WithSeverity)
+import Data.Foldable (asum)
 import Data.Hashable (Hashable)
+import Data.List (find)
 import Data.Set (Set)
 import Data.Text (pack)
 import Data.Time.Calendar (Day, showGregorian)
@@ -76,6 +78,7 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
             Incomplete      -> False
 
         revDate (day, _, _) = day
+        revState (_, _, state) = state
 
         revisionsForChannel :: _ => Connection -> Channel -> m [Either String Revision]
         revisionsForChannel conn channel = do
@@ -96,7 +99,7 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
                     return $ Left $ "Unable to get commits from GitHub for " <> show day <> ": " <> show err
 
                 Right [] -> do
-                    DB.registerInvalidRevision conn day (Revision channel (Commit (Hash $ pack $ show day) day))
+                    DB.saveRevision conn day (Revision channel (Commit (Hash $ pack $ show day) day)) InvalidRevision
                     let msg = "No commits found for " <> show day
                     liftIO $ putStrLn msg
                     return $ Left msg
@@ -117,16 +120,35 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
             liftIO $ putStrLn $ "Attempt " <> show tryCount <> ". Downloading files for " <> showGregorian day <> ". " <> show hash
             return rev
 
-        download conn day revision@(Revision channel _) = do
-            eRev <- build revision
-            case eRev of
-                Left  err -> do
-                    DB.registerInvalidRevision conn day revision
-                    return (Left (day, channel, err))
-                Right packages -> do
-                    liftIO $ putStrLn $ "Saving Nix result for" <> show revision
-                    DB.save conn day revision packages
+        download conn day revision@(Revision channel commit) = do
+            s <- bestRevisionState conn commit
+            case s of
+                Just state -> do
+                    DB.saveRevision conn day revision state
                     return $ Right $ revision
+
+                Nothing -> do
+                    eRev <- build revision
+                    case eRev of
+                        Left  err -> do
+                            DB.saveRevision conn day revision InvalidRevision
+                            return (Left (day, channel, err))
+                        Right packages -> do
+                            liftIO $ putStrLn $ "Saving Nix result for" <> show revision
+                            DB.save conn day revision packages
+                            return $ Right $ revision
+
+        -- Check whether we already saved the packages associated
+        -- with that nixpkgs commit. If we did, just register that this
+        -- revision is also valid for our current channel
+        bestRevisionState :: _ => DB.Connection -> Commit -> m (Maybe RevisionState)
+        bestRevisionState conn (Commit hash _) = do
+            revisions <- DB.revisionsByHash conn hash
+            return
+                $ asum
+                $ (\states -> fmap (flip find states . (==)) [ Success , InvalidRevision ])
+                $ fmap revState revisions
+
 
 newtype Week = Week Int
     deriving (Eq, Show, Ord)
@@ -160,11 +182,9 @@ isWeekOfInterest (Week week) = week `mod` 5 == 1
 ----------------------------------------------------------------------------------------------
 -- Concurrency
 
-limitedConcurrency _ = sequence
-
 -- | Run the maximum amount of concurrent computations possible, but no more than that.
-temp_limitedConcurrency :: MonadConc m => ConcKey m -> [m a] -> m [a]
-temp_limitedConcurrency ConcKey {maxConcurrency, activeThreads} actions = do
+limitedConcurrency :: MonadConc m => ConcKey m -> [m a] -> m [a]
+limitedConcurrency ConcKey {maxConcurrency, activeThreads} actions = do
     asyncs <- foldM runWhenPossible [] actions
     traverse wait asyncs
     where
