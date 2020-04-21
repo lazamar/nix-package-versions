@@ -30,9 +30,10 @@ import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Int (Int64)
 import Data.Functor ((<&>))
 import Data.Maybe (fromMaybe)
+import Data.String (fromString, IsString)
 import Data.Text (Text, pack, unpack)
 import Data.Time.Calendar (Day(..), toModifiedJulianDay)
-import Database.SQLite.Simple (ToRow(toRow), FromRow(fromRow), SQLData(..))
+import Database.SQLite.Simple (ToRow(toRow), FromRow(fromRow), SQLData(..), NamedParam((:=)))
 import Nix.Revision (Channel, Revision(..), RevisionPackages, Package(..))
 import Nix.Versions.Types (CachePath(..), DBFile(..), Hash(..), Version(..), Name(..), Commit(..))
 
@@ -43,7 +44,7 @@ newtype Connection = Connection SQL.Connection
 
 -- Constants
 
-db_REVISIONS, db_PACKAGE_VERSIONS, db_PACKAGE_NAMES :: SQL.Query
+db_REVISIONS, db_PACKAGE_VERSIONS, db_PACKAGE_NAMES :: IsString a => a
 db_PACKAGE_NAMES    = "PACKAGE_NAMES"
 db_PACKAGE_VERSIONS = "PACKAGE_VERSIONS"
 db_REVISIONS        = "REVISIONS"
@@ -101,12 +102,28 @@ withConnection cache file = bracket (connect cache file) disconnect
 -- | Retrieve all versions available for a package
 -- This will be on the order of the tens, or maximum the
 -- hundreds, so it is fine to just return all of them
-versions :: MonadIO m => Connection -> Name -> m [(Hash, Package)]
-versions (Connection conn) (Name name) = liftIO $ do
-    results <- SQL.query
+versions :: MonadIO m => Connection -> Channel -> Name -> m [(Hash, Package)]
+versions (Connection conn) channel (Name name) = liftIO $ do
+    results <- SQL.queryNamed
         conn
-        ("SELECT * FROM " <> db_PACKAGE_VERSIONS <> " WHERE PACKAGE_NAME = ?")
-        [unpack name]
+        (fromString $ unwords
+            [ "SELECT"
+            ,   "PACKAGE_NAME,"
+            ,   "VERSION_NAME,"
+            ,   "REVISION_HASH,"
+            ,   "DESCRIPTION,"
+            ,   "NIXPATH"
+            , "FROM"
+            , db_PACKAGE_VERSIONS, "INNER JOIN", db_REVISIONS
+            , "WHERE"
+            , "COMMIT_HASH = REVISION_HASH"
+            , "AND CHANNEL =  :channel"
+            , "AND PACKAGE_NAME = :name"
+            ]
+        )
+        [ ":name"    := unpack name
+        , ":channel" := show channel
+        ]
     return $ toVersionInfo <$> results
         where
             toVersionInfo  (SQLPackageVersion (_, pkg, hash)) = (hash, pkg)

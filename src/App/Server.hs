@@ -5,28 +5,33 @@
 module App.Server (run) where
 
 import Control.Monad (mapM_, join)
+import Data.Foldable (traverse_)
+import Data.List (lookup)
+import Data.Maybe (fromMaybe)
 import Data.String (fromString)
 import Data.Text.Encoding (decodeUtf8)
-import Data.List (lookup)
 import Network.HTTP.Types (status200, status404)
 import Network.Wai (Application, Request, Response, responseLBS, rawPathInfo, queryString)
+import Nix.Revision (Package(..), Channel(..))
+import Nix.Versions.Database (Connection)
+import Nix.Versions.Types (Hash(..), Version(..), Config(..), Name(..))
 import Text.Blaze.Html.Renderer.Utf8 (renderHtml)
 import Text.Blaze.Html5 ((!))
-import Nix.Versions.Types (Hash(..), Version(..), Config(..), Name(..))
-import Nix.Versions.Database (Connection)
-import Nix.Revision (Package(..))
+import Text.Read (readMaybe)
 
 import qualified Network.Wai.Handler.Warp as Warp
 import qualified Text.Blaze.Html5 as H
 import qualified Text.Blaze.Html5.Attributes as A
+import qualified Data.Text as Text
 
 import qualified Nix.Versions.Database as Persistent
 
 run :: Config -> IO ()
 run config = do
+    let port = 8080
     conn <- Persistent.connect (config_cacheDirectory config) (config_databaseFile config)
-    putStrLn $ "http://localhost:8080/"
-    Warp.run 8080 (app conn)
+    putStrLn $ "Running server on port " <> show port
+    Warp.run port (app conn)
 
 app :: Connection -> Application
 app conn request respond = do
@@ -41,22 +46,34 @@ pageHome conn request = do
     return $ responseLBS status200 [("Content-Type", "text/html")] $ renderHtml $
         H.docTypeHtml do
         H.body do
-            H.form ! A.action "." ! A.method "GET" $ do
+            H.form
+                ! A.action "."
+                ! A.method "GET"
+                $ do
+                selectBox channelKey show selectedChannel [minBound..]
                 H.input
                     ! A.type_ "text"
                     ! A.name (fromString pkgKey)
                     ! A.placeholder "Package name"
             createResults mPackages
     where
-        getVersions name = (n,) <$> Persistent.versions conn n
-            where n = Name name
-
         pkgKey = "package"
 
-        mSearchedPackage
+        channelKey = "channel"
+
+        getVersions name = (n,) <$> Persistent.versions conn selectedChannel n
+            where n = Name name
+
+        selectedChannel = fromMaybe Nixpkgs_unstable $ do
+            val <- queryValueFor channelKey
+            readMaybe $ Text.unpack val
+
+        mSearchedPackage = queryValueFor pkgKey
+
+        queryValueFor key
             = fmap decodeUtf8
             $ join
-            $ lookup (fromString pkgKey)
+            $ lookup (fromString key)
             $ queryString request
 
         createResults Nothing                 = mempty
@@ -82,3 +99,19 @@ pageNotFound = responseLBS
     status404
     [("Content-Type", "text/plain")]
     "404 - Not Found"
+
+selectBox :: Eq a => String -> (a -> String) -> a -> [a] -> H.Html
+selectBox name toString selected options =
+    H.select
+        ! A.name (fromString name)
+        $ traverse_ toOption options
+    where
+        toOption value =
+            H.option
+                ! (if value == selected then A.selected "true" else mempty)
+                ! A.value (fromString $ toString value)
+                $ fromString (toString value)
+
+
+
+

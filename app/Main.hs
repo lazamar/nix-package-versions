@@ -27,8 +27,7 @@ to = read "2019-04-01"
 
 main :: IO ()
 main = do
-    --
-    downloadRevisions
+    runServer
 
 downloadRevisions :: IO ()
 downloadRevisions = do
@@ -44,7 +43,7 @@ findVersion  :: IO ()
 findVersion = do
     config <- getConfig
     conn <- Persistent.connect (config_cacheDirectory config) (config_databaseFile config)
-    res <- Persistent.versions conn (Name "haskellPackages.hlint")
+    res <- Persistent.versions conn minBound (Name "haskellPackages.hlint")
     showVersions res
 
 getName :: IO Name
