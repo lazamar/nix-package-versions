@@ -53,6 +53,7 @@ pageHome conn request = do
                 selectBox channelKey show selectedChannel [minBound..]
                 H.input
                     ! A.type_ "text"
+                    ! A.value (fromString $ Text.unpack $ fromMaybe ""  mSearchedPackage)
                     ! A.name (fromString pkgKey)
                     ! A.placeholder "Package name"
             createResults mPackages
