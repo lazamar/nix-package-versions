@@ -1,5 +1,30 @@
 # Notes
 
+## Pinning Nix Pkgs versinos
+https://nixos.wiki/wiki/FAQ/Pinning_Nixpkgs
+
+
+    let
+        revision = builtins.fetchGit {
+            # Descriptive name to make the store path easier to identify
+            name = "does-the-name-matter";
+            url = "https://github.com/nixos/nixpkgs-channels/";
+            # Commit hash for nixos-unstable as of 2018-09-12
+            # `git ls-remote https://github.com/nixos/nixpkgs-channels nixos-unstable`
+            ref = "refs/heads/nixpkgs-17.09-darwin";
+            rev = "24a7883c2349af5076107dbbb615be09d6025a95";
+          };
+    in with import revision {};
+    (import <nixpkgs> {}).mkShell {
+        buildInputs = [
+            vim
+        ];
+    }
+
+## On cache busting
+
+Find the version of nixpkgs with the package version you want and pin nixpkgs to that. However, be aware that the pinning of a package of another nixpkgs version results in a much larger package size as not only the package itself but all dependencies (down to libc) have older versions.
+
 ## Implementation notes:
 
 The commit route is not fruitful. Packages will point to different files for different versions.
