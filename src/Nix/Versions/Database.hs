@@ -17,9 +17,10 @@ module Nix.Versions.Database
     , withConnection
 
     -- Write
-    , save
+    , saveRevisionWithPackages
     , saveRevision
     , saveRevisionWithState
+    , saveCommit
 
     -- Read
     , versions
@@ -165,20 +166,9 @@ toInfo (SQLRevision day revision state) = (day, revision, state)
 -------------------------------------------------------------------------------
 -- Write
 
--- | When there is a problem building the revision this function allows us
--- to record that in the database so that later we don't try to build it again
-saveRevision :: MonadIO m => Connection -> Day -> Revision -> m ()
-saveRevision conn represents revision =
-    persistRevision conn represents revision
-
-saveRevisionWithState :: MonadIO m => Connection -> Day -> Revision -> RevisionState -> m ()
-saveRevisionWithState conn represents revision@(Revision _ commit) state = do
-    persistCommit conn commit state
-    persistRevision conn represents revision
-
 -- | Save the entire database
-save :: (MonadConc m, MonadIO m) => Connection -> Day -> Revision -> RevisionPackages -> m ()
-save conn represents revision packages = do
+saveRevisionWithPackages :: (MonadConc m, MonadIO m) => Connection -> Day -> Revision -> RevisionPackages -> m ()
+saveRevisionWithPackages conn represents revision packages = do
     saveRevisionWithState conn represents revision Incomplete
     mapConcurrently_ persistPackage (HashMap.toList packages)
     saveRevisionWithState conn represents revision Success
@@ -186,24 +176,30 @@ save conn represents revision packages = do
         Revision _ (Commit hash _) = revision
 
         persistPackage (name, info) =
-            persistVersion conn hash name info
+            saveVersion conn hash name info
 
+saveRevisionWithState :: MonadIO m => Connection -> Day -> Revision -> RevisionState -> m ()
+saveRevisionWithState conn represents revision@(Revision _ commit) state = do
+    saveCommit conn commit state
+    saveRevision conn represents revision
 
-persistRevision :: MonadIO m => Connection -> Day -> Revision -> m ()
-persistRevision (Connection conn) represents (Revision channel (Commit hash _)) =
+-- | When there is a problem building the revision this function allows us
+-- to record that in the database so that later we don't try to build it again
+saveRevision :: MonadIO m => Connection -> Day -> Revision -> m ()
+saveRevision (Connection conn) represents (Revision channel (Commit hash _)) =
     liftIO $ SQL.execute conn
             ("INSERT OR REPLACE INTO " <> db_REVISIONS <> " VALUES (?,?,?)")
             (SQLRevisionRow hash channel represents)
 
 -- | Save the version info of a package in the database
-persistVersion :: MonadIO m => Connection -> Hash -> Name -> Package -> m ()
-persistVersion (Connection conn) hash name info =
+saveVersion :: MonadIO m => Connection -> Hash -> Name -> Package -> m ()
+saveVersion (Connection conn) hash name info =
     liftIO $ SQL.execute conn
             ("INSERT OR REPLACE INTO " <> db_PACKAGE_VERSIONS <> " VALUES (?,?,?,?,?)")
             (SQLPackageVersion (name, info, hash))
 
-persistCommit :: MonadIO m => Connection -> Commit -> RevisionState -> m ()
-persistCommit (Connection conn) commit state =
+saveCommit :: MonadIO m => Connection -> Commit -> RevisionState -> m ()
+saveCommit (Connection conn) commit state =
     liftIO $ SQL.execute conn
             ("INSERT OR REPLACE INTO " <> db_REVISION_COMMITS <> " VALUES (?,?,?)")
             (SQLRevisionCommit commit state)
@@ -213,6 +209,7 @@ persistCommit (Connection conn) commit state =
 data RevisionState
     = Success            -- ^ All revision packages were successfully added to the DB
     | Incomplete         -- ^ The process of adding packages to the DB was started but not finished
+    | PreDownload        -- ^ We are still to start the download and handling of this state
     | InvalidRevision    -- ^ This revision cannot be built. It is not worth trying again.
     deriving (Show, Eq, Enum, Read)
 

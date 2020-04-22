@@ -34,16 +34,16 @@ spec = do
 
         it "can save and load a revision" $ do
             overDatabase $ \conn -> do
-                () <- P.save conn day revision packages
+                () <- P.saveRevisionWithPackages conn day revision packages
                 v1 <- P.versions conn defaultChannel  pname
                 length v1 `shouldBe` 1
 
         -- We can add the same thing over and over again and we won't get duplicates
         it "Adding revisions is idempotent" $ do
             overDatabase $ \conn -> do
-                () <- P.save conn day revision packages
+                () <- P.saveRevisionWithPackages conn day revision packages
                 v1 <- P.versions conn defaultChannel pname
-                () <- P.save conn day revision packages
+                () <- P.saveRevisionWithPackages conn day revision packages
                 v2 <- P.versions conn defaultChannel pname
                 v1 `shouldBe` v2
                 length v1 `shouldBe` 1
@@ -59,8 +59,8 @@ spec = do
                 -- Even though the packages have the same name,
                 -- because they point to revisions with different commits
                 -- they only appear in the respective revision search
-                () <- P.save conn day revision packages
-                () <- P.save conn day otherRevision otherPackages
+                () <- P.saveRevisionWithPackages conn day revision packages
+                () <- P.saveRevisionWithPackages conn day otherRevision otherPackages
                 v1 <- P.versions conn defaultChannel pname
                 v2 <- P.versions conn otherChannel   pname
                 (snd <$> v1) `shouldBe` [pkg]

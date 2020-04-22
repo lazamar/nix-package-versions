@@ -127,6 +127,7 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
                     return $ Right $ revision
                 -- Is new commit
                 Nothing -> do
+                    DB.saveCommit conn commit PreDownload
                     eRev <- build revision
                     case eRev of
                         Left  err -> do
@@ -134,7 +135,7 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
                             return (Left (day, channel, err))
                         Right packages -> do
                             liftIO $ putStrLn $ "Saving Nix result for" <> show revision
-                            DB.save conn day revision packages
+                            DB.saveRevisionWithPackages conn day revision packages
                             return $ Right $ revision
 
         -- Check whether we already saved the packages associated
