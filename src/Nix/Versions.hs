@@ -18,9 +18,7 @@ import Control.Monad.Catch (MonadMask)
 import Control.Monad.Except (liftIO )
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Log (MonadLog, WithSeverity)
-import Data.Foldable (asum)
 import Data.Hashable (Hashable)
-import Data.List (find)
 import Data.Set (Set)
 import Data.Text (pack)
 import Data.Time.Calendar (Day, showGregorian)
@@ -78,7 +76,6 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
             Incomplete      -> False
 
         revDate (day, _, _) = day
-        revState (_, _, state) = state
 
         revisionsForChannel :: _ => Connection -> Channel -> m [Either String Revision]
         revisionsForChannel conn channel = do
@@ -99,7 +96,8 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
                     return $ Left $ "Unable to get commits from GitHub for " <> show day <> ": " <> show err
 
                 Right [] -> do
-                    DB.saveRevision conn day (Revision channel (Commit (Hash $ pack $ show day) day)) InvalidRevision
+                    -- Placeholder revision just to say that this day is invalid
+                    DB.saveRevisionWithState conn day (Revision channel (Commit (Hash $ pack $ show day) day)) InvalidRevision
                     let msg = "No commits found for " <> show day
                     liftIO $ putStrLn msg
                     return $ Left msg
@@ -121,17 +119,18 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
             return rev
 
         download conn day revision@(Revision channel commit) = do
-            s <- bestRevisionState conn commit
+            s <- commitState conn commit
             case s of
-                Just state -> do
-                    DB.saveRevision conn day revision state
+                -- Commit is already in database
+                Just _ -> do
+                    DB.saveRevision conn day revision
                     return $ Right $ revision
-
+                -- Is new commit
                 Nothing -> do
                     eRev <- build revision
                     case eRev of
                         Left  err -> do
-                            DB.saveRevision conn day revision InvalidRevision
+                            DB.saveRevisionWithState conn day revision InvalidRevision
                             return (Left (day, channel, err))
                         Right packages -> do
                             liftIO $ putStrLn $ "Saving Nix result for" <> show revision
@@ -141,13 +140,13 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
         -- Check whether we already saved the packages associated
         -- with that nixpkgs commit. If we did, just register that this
         -- revision is also valid for our current channel
-        bestRevisionState :: _ => DB.Connection -> Commit -> m (Maybe RevisionState)
-        bestRevisionState conn (Commit hash _) = do
-            revisions <- DB.revisionsByHash conn hash
-            return
-                $ asum
-                $ (\states -> fmap (flip find states . (==)) [ Success , InvalidRevision ])
-                $ fmap revState revisions
+        commitState :: _ => DB.Connection -> Commit -> m (Maybe RevisionState)
+        commitState  conn (Commit hash _) = do
+            mCommit <- DB.revisionCommit conn hash
+            return $ case snd <$> mCommit of
+                Just Success         -> Just Success
+                Just InvalidRevision -> Just InvalidRevision
+                _                    -> Nothing
 
 
 newtype Week = Week Int

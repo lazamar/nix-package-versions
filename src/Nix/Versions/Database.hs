@@ -19,16 +19,20 @@ module Nix.Versions.Database
     -- Write
     , save
     , saveRevision
+    , saveRevisionWithState
 
     -- Read
     , versions
     , revisions
-    , revisionsByHash
+    , revisionCommit
     ) where
 
-import Control.Concurrent.Async (mapConcurrently_)
+import Control.Monad.Conc.Class (MonadConc)
+import Control.Concurrent.Classy.Async (mapConcurrently_)
+import Control.Exception (assert)
 import Control.Monad.Catch (MonadMask, bracket)
 import Control.Monad.IO.Class (MonadIO, liftIO)
+import Data.Maybe (listToMaybe)
 import Data.Functor ((<&>))
 import Data.Maybe (fromMaybe)
 import Data.String (fromString, IsString)
@@ -144,13 +148,16 @@ revisions (Connection conn) channel = liftIO $ do
         [show channel]
     return $ toInfo <$> results
 
-revisionsByHash :: MonadIO m => Connection -> Hash ->  m [(Day, Revision, RevisionState)]
-revisionsByHash (Connection conn) (Hash hash) = liftIO $ do
-    results <- SQL.query
+revisionCommit :: MonadIO m => Connection -> Hash ->  m (Maybe (Commit, RevisionState))
+revisionCommit  (Connection conn) (Hash hash) = liftIO $ do
+    commits <- SQL.query
         conn
-        (sqlRevisionQueryWithWhere <> " AND COMMIT_HASH = ?")
+        ("SELECT * FROM " <> db_REVISION_COMMITS <> " AND HASH = ?")
         [show hash]
-    return $ toInfo <$> results
+    return $ assert (length commits <= 1) $ toResult <$> listToMaybe commits
+    where
+        toResult (SQLRevisionCommit commit state) = (commit, state)
+
 
 toInfo :: SQLRevision -> (Day, Revision, RevisionState)
 toInfo (SQLRevision day revision state) = (day, revision, state)
@@ -160,44 +167,47 @@ toInfo (SQLRevision day revision state) = (day, revision, state)
 
 -- | When there is a problem building the revision this function allows us
 -- to record that in the database so that later we don't try to build it again
-saveRevision :: MonadIO m => Connection -> Day -> Revision -> RevisionState -> m ()
-saveRevision conn represents revision state =
-    liftIO $ persistRevision conn represents revision state
+saveRevision :: MonadIO m => Connection -> Day -> Revision -> m ()
+saveRevision conn represents revision =
+    persistRevision conn represents revision
+
+saveRevisionWithState :: MonadIO m => Connection -> Day -> Revision -> RevisionState -> m ()
+saveRevisionWithState conn represents revision@(Revision _ commit) state = do
+    persistCommit conn commit state
+    persistRevision conn represents revision
 
 -- | Save the entire database
-save :: MonadIO m => Connection -> Day -> Revision -> RevisionPackages -> m ()
-save conn represents revision packages = liftIO $ do
-    persistRevisionWithState Incomplete
+save :: (MonadConc m, MonadIO m) => Connection -> Day -> Revision -> RevisionPackages -> m ()
+save conn represents revision packages = do
+    saveRevisionWithState conn represents revision Incomplete
     mapConcurrently_ persistPackage (HashMap.toList packages)
-    persistRevisionWithState Success
+    saveRevisionWithState conn represents revision Success
     where
         Revision _ (Commit hash _) = revision
 
         persistPackage (name, info) =
             persistVersion conn hash name info
 
-        persistRevisionWithState =
-            persistRevision conn represents revision
 
+persistRevision :: MonadIO m => Connection -> Day -> Revision -> m ()
+persistRevision (Connection conn) represents (Revision channel (Commit hash _)) =
+    liftIO $ SQL.execute conn
+            ("INSERT OR REPLACE INTO " <> db_REVISIONS <> " VALUES (?,?,?)")
+            (SQLRevisionRow hash channel represents)
 
-persistRevision :: Connection -> Day -> Revision -> RevisionState -> IO ()
-persistRevision (Connection conn) represents (Revision channel commit) state = do
-    SQL.execute conn
+-- | Save the version info of a package in the database
+persistVersion :: MonadIO m => Connection -> Hash -> Name -> Package -> m ()
+persistVersion (Connection conn) hash name info =
+    liftIO $ SQL.execute conn
+            ("INSERT OR REPLACE INTO " <> db_PACKAGE_VERSIONS <> " VALUES (?,?,?,?,?)")
+            (SQLPackageVersion (name, info, hash))
+
+persistCommit :: MonadIO m => Connection -> Commit -> RevisionState -> m ()
+persistCommit (Connection conn) commit state =
+    liftIO $ SQL.execute conn
             ("INSERT OR REPLACE INTO " <> db_REVISION_COMMITS <> " VALUES (?,?,?)")
             (SQLRevisionCommit commit state)
 
-    SQL.execute conn
-            ("INSERT OR REPLACE INTO " <> db_REVISIONS <> " VALUES (?,?,?)")
-            (SQLRevisionRow hash channel represents)
-    where
-        Commit hash _ = commit
-
--- | Save the version info of a package in the database
-persistVersion :: Connection -> Hash -> Name -> Package -> IO ()
-persistVersion (Connection conn) hash name info =
-    SQL.execute conn
-            ("INSERT OR REPLACE INTO " <> db_PACKAGE_VERSIONS <> " VALUES (?,?,?,?,?)")
-            (SQLPackageVersion (name, info, hash))
 
 -- | Whether all revision entries were added to the table.
 data RevisionState

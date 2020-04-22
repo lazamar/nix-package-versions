@@ -139,7 +139,7 @@ revisionsOn :: MonadIO m => GitHubUser -> Channel -> Day -> m (Either String [Re
 revisionsOn guser channel day
     = liftIO
     $ fmap (fmap $ fmap $ Revision channel)
-    $ commitsUntil guser (channelBranch channel) day
+    $ commitsUntil guser gnixpkgs (channelBranch channel) day
 
 gnixpkgs :: GitHubRepo
 gnixpkgs = GitHubRepo
@@ -177,8 +177,8 @@ channelBranch = GitBranch . \case
 -- | Fetch a list of commits until end of Day
 -- Sorted oldest to newest
 -- Verified commits appear earlier in the list
-commitsUntil :: GitHubUser -> GitBranch -> Day -> IO (Either String [Commit])
-commitsUntil (GitHubUser guser gtoken) (GitBranch branch) day = do
+commitsUntil :: GitHubUser -> GitHubRepo -> GitBranch -> Day -> IO (Either String [Commit])
+commitsUntil (GitHubUser guser gtoken) grepo (GitBranch branch) day = do
     response <-
         tryJust isHttpException
         $ fmap Req.responseBody
@@ -201,8 +201,8 @@ commitsUntil (GitHubUser guser gtoken) (GitBranch branch) day = do
 
         url = Req.https "api.github.com"
             Req./: "repos"
-            Req./: g_user gnixpkgs
-            Req./: g_repo gnixpkgs
+            Req./: g_user grepo
+            Req./: g_repo grepo
             Req./: "commits"
 
         isHttpException :: Req.HttpException -> Maybe String
