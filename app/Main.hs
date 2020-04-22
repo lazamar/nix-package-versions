@@ -13,9 +13,10 @@ import Nix.Versions.Types (DBFile(..),GitHubUser(..), CachePath(..), Config(..))
 import Control.Monad (mapM_)
 import Control.Monad.Log2 (runLoggerT, pretty)
 import Control.Monad.Log (logInfo)
-import Options.Applicative  (info, option, auto, helper, switch, maybeReader, help
-                            , metavar, fullDesc, progDesc, header, long, showDefault, value
-                            , Parser, execParser, (<**>))
+import Options.Applicative
+    (info, option, auto, helper, switch, maybeReader, help, metavar, fullDesc, progDesc
+    , header, long, showDefault, value, Parser, execParser, (<**>)
+    )
 import Data.Semigroup ((<>))
 import System.Exit (exitFailure)
 import App.Server (Port(..))

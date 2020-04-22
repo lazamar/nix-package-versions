@@ -1,6 +1,9 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 {-|
 Save and retrieving Database types from persistent storage
@@ -24,7 +27,6 @@ module Nix.Versions.Database
     ) where
 
 import Control.Concurrent.Async (mapConcurrently_)
-import Control.Exception (catchJust)
 import Control.Monad.Catch (MonadMask, bracket)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Int (Int64)
@@ -34,6 +36,8 @@ import Data.String (fromString, IsString)
 import Data.Text (Text, pack, unpack)
 import Data.Time.Calendar (Day(..), toModifiedJulianDay)
 import Database.SQLite.Simple (ToRow(toRow), FromRow(fromRow), SQLData(..), NamedParam((:=)))
+import Database.SQLite.Simple.FromField (FromField(..))
+import Database.SQLite.Simple.ToField (ToField(..))
 import Nix.Revision (Channel, Revision(..), RevisionPackages, Package(..))
 import Nix.Versions.Types (CachePath(..), DBFile(..), Hash(..), Version(..), Name(..), Commit(..))
 
@@ -44,10 +48,10 @@ newtype Connection = Connection SQL.Connection
 
 -- Constants
 
-db_REVISIONS, db_PACKAGE_VERSIONS, db_PACKAGE_NAMES :: IsString a => a
-db_PACKAGE_NAMES    = "PACKAGE_NAMES"
+db_REVISION_COMMITS, db_REVISIONS, db_PACKAGE_VERSIONS :: IsString a => a
 db_PACKAGE_VERSIONS = "PACKAGE_VERSIONS"
 db_REVISIONS        = "REVISIONS"
+db_REVISION_COMMITS = "REVISION_COMMITS"
 
 -- | Get a connection and prepare database for usage
 connect :: MonadIO m => CachePath -> DBFile -> m Connection
@@ -61,23 +65,26 @@ connect (CachePath dir) (DBFile fname) = liftIO $ do
 
 ensureTablesAreCreated :: SQL.Connection -> IO ()
 ensureTablesAreCreated conn = do
-    SQL.execute_ conn $ "CREATE TABLE IF NOT EXISTS  " <> db_REVISIONS <> " "
+    SQL.execute_ conn $ "CREATE TABLE IF NOT EXISTS  " <> db_REVISION_COMMITS <> " "
                         -- | Details about the Revision's commit
+                        <> "( HASH              TEXT        NOT NULL PRIMARY KEY"
+                        <> ", DAY               INTEGER     NOT NULL"
+                        -- | Whether we were able to successfully add all packages versions
+                        -- available in this commit
+                        <> ", STATE             TEXT        NOT NULL"
+                        <> ")"
+
+    SQL.execute_ conn $ "CREATE TABLE IF NOT EXISTS  " <> db_REVISIONS <> " "
+                        -- The same commit hash can be used for multiple channels and for
+                        -- multiple dates of the same channel
                         <> "( COMMIT_HASH       TEXT        NOT NULL"
-                        <> ", COMMIT_DAY        INTEGER     NOT NULL"
                         <> ", CHANNEL           TEXT        NOT NULL" -- TODO: Foreign key
                         -- | Even though the commit might have been done in a certain date,
                         -- we added it to the database to represent the state of nixpkgs
                         -- on a specific date, which may be different from the exact commit date.
                         <> ", REPRESENTS_DAY    INTEGER     NOT NULL"
-                        -- | Whether we were able to successfully add all Revision packages to the table
-                        <> ", STATE             TEXT        NOT NULL"
-                        -- The same commit hash can be used for multiple channels
-                        <> ", PRIMARY KEY (COMMIT_HASH, CHANNEL)"
-                        <> ")"
-
-    SQL.execute_ conn $ "CREATE TABLE IF NOT EXISTS  " <> db_PACKAGE_NAMES <> " "
-                        <> "( PACKAGE_NAME TEXT PRIMARY KEY"
+                        <> ", PRIMARY KEY (CHANNEL, REPRESENTS_DAY)"
+                        <> ", FOREIGN KEY (COMMIT_HASH) REFERENCES " <> db_REVISION_COMMITS <> "(HASH)"
                         <> ")"
 
     SQL.execute_ conn $ "CREATE TABLE IF NOT EXISTS  " <> db_PACKAGE_VERSIONS <> " "
@@ -86,8 +93,8 @@ ensureTablesAreCreated conn = do
                         <> ", REVISION_HASH TEXT NOT NULL"
                         <> ", DESCRIPTION   TEXT"
                         <> ", NIXPATH       TEXT"
-                        <> ", PRIMARY KEY (PACKAGE_NAME, VERSION_NAME)"
-                        <> ", FOREIGN KEY (PACKAGE_NAME) REFERENCES " <> db_PACKAGE_NAMES <> "(PACKAGE_NAME)"
+                        <> ", PRIMARY KEY (PACKAGE_NAME, VERSION_NAME, REVISION_HASH)"
+                        <> ", FOREIGN KEY (REVISION_HASH) REFERENCES " <> db_REVISION_COMMITS <> "(HASH)"
                         <> ")"
 
 disconnect :: MonadIO m => Connection -> m ()
@@ -134,7 +141,7 @@ revisions :: MonadIO m => Connection -> Channel -> m [(Day, Revision, RevisionSt
 revisions (Connection conn) channel = liftIO $ do
     results <- SQL.query
         conn
-        ("SELECT * FROM " <> db_REVISIONS <> " WHERE CHANNEL = ?")
+        (sqlRevisionQueryWithWhere  <> " AND CHANNEL = ?")
         [show channel]
     return $ toInfo <$> results
 
@@ -142,7 +149,7 @@ revisionsByHash :: MonadIO m => Connection -> Hash ->  m [(Day, Revision, Revisi
 revisionsByHash (Connection conn) (Hash hash) = liftIO $ do
     results <- SQL.query
         conn
-        ("SELECT * FROM " <> db_REVISIONS <> " WHERE COMMIT_HASH = ?")
+        (sqlRevisionQueryWithWhere <> " AND COMMIT_HASH = ?")
         [show hash]
     return $ toInfo <$> results
 
@@ -175,34 +182,23 @@ save conn represents revision packages = liftIO $ do
 
 
 persistRevision :: Connection -> Day -> Revision -> RevisionState -> IO ()
-persistRevision (Connection conn) represents revision state =
+persistRevision (Connection conn) represents (Revision channel commit) state = do
     SQL.execute conn
-            ("INSERT OR REPLACE INTO " <> db_REVISIONS <> " VALUES (?,?,?,?,?)")
-            (SQLRevision represents revision state)
+            ("INSERT OR REPLACE INTO " <> db_REVISION_COMMITS <> " VALUES (?,?,?)")
+            (SQLRevisionCommit commit state)
+
+    SQL.execute conn
+            ("INSERT OR REPLACE INTO " <> db_REVISIONS <> " VALUES (?,?,?)")
+            (SQLRevisionRow hash channel represents)
+    where
+        Commit hash _ = commit
 
 -- | Save the version info of a package in the database
 persistVersion :: Connection -> Hash -> Name -> Package -> IO ()
 persistVersion (Connection conn) hash name info =
-    catchJust noPackageWithThatName
-        insertVersion
-        (\_ -> insertPackageName >> insertVersion)
-    where
-        insertVersion = SQL.execute conn
+    SQL.execute conn
             ("INSERT OR REPLACE INTO " <> db_PACKAGE_VERSIONS <> " VALUES (?,?,?,?,?)")
             (SQLPackageVersion (name, info, hash))
-
-        insertPackageName = SQL.execute conn
-            ("INSERT OR REPLACE INTO " <> db_PACKAGE_NAMES <> " VALUES (?)")
-            (SQLPackageName name)
-
-        noPackageWithThatName = isConstraintError
-
-        isConstraintError :: SQL.SQLError -> Maybe ()
-        isConstraintError err =
-            if SQL.sqlError err == SQL.ErrorConstraint
-               then Just ()
-               else Nothing
-
 
 -- | Whether all revision entries were added to the table.
 data RevisionState
@@ -211,39 +207,57 @@ data RevisionState
     | InvalidRevision    -- ^ This revision cannot be built. It is not worth trying again.
     deriving (Show, Eq, Enum, Read)
 
+
+-- | A query that yields a value that can become an SQLRevision value
+sqlRevisionQueryWithWhere :: IsString a => a
+sqlRevisionQueryWithWhere = fromString $ unwords
+    ["SELECT"
+    ,  "COMMIT_HASH,"
+    ,  "DAY,"
+    ,  "CHANNEL,"
+    ,  "REPRESENTS_DAY,"
+    ,  "STATE"
+    , "FROM"
+    , db_REVISIONS, "INNER JOIN", db_REVISION_COMMITS
+    , "WHERE"
+    , "COMMIT_HASH = HASH"
+    ]
+
+-- | One row of a join between db_REVISIONS and db_REVISION_COMMITS
 data SQLRevision = SQLRevision Day Revision RevisionState
 
 instance FromRow SQLRevision where
     fromRow = construct
-        <$> (SQL.field <&> Hash)
+        <$> SQL.field
         <*> (SQL.field <&> ModifiedJulianDay . fromInteger)
-        <*> (SQL.field <&> read)
+        <*> SQL.field
         <*> (SQL.field <&> ModifiedJulianDay . fromInteger)
-        <*> (SQL.field <&> read)
+        <*> SQL.field
         where
             construct :: Hash -> Day -> Channel -> Day -> RevisionState -> SQLRevision
             construct hash date channel represents state =
                 SQLRevision represents (Revision channel (Commit hash date)) state
 
-instance ToRow SQLRevision where
-    toRow (SQLRevision represents (Revision channel (Commit hash date)) state) =
-        [ SQLText    $ fromHash hash                   -- ^ COMMIT_HASH
-        , SQLInteger $ dayToInt date                   -- ^ COMMIT_DAY
-        , SQLText    $ pack $ show channel             -- ^ CHANNEL
-        , SQLInteger $ dayToInt represents             -- ^ REPRESENTS_DAY
-        , SQLText    $ pack $ show state               -- ^ STATE
+-- | One row of db_REVISIONS
+data SQLRevisionRow = SQLRevisionRow Hash Channel Day
+    deriving (Show, Eq)
+
+instance ToRow SQLRevisionRow  where
+    toRow (SQLRevisionRow hash channel day) =
+        [ toField hash
+        , toField channel
+        , SQLInteger $ dayToInt day
         ]
 
+instance FromRow SQLRevisionRow  where
+    fromRow = SQLRevisionRow
+        <$> SQL.field
+        <*> SQL.field
+        <*> (SQL.field <&> ModifiedJulianDay . fromInteger)
 
-newtype SQLPackageName = SQLPackageName Name
-
-instance ToRow SQLPackageName where
-    toRow (SQLPackageName (Name name)) = [SQLText name]
-
-instance FromRow SQLPackageName where
-    fromRow = (SQLPackageName . Name) <$> SQL.field
-
+-- | One row of db_PACKAGE_VERSIONS
 newtype SQLPackageVersion = SQLPackageVersion (Name, Package, Hash)
+    deriving (Show, Eq)
 
 instance ToRow SQLPackageVersion where
     toRow (SQLPackageVersion (name, Package { description, nixpkgsPath, version }, hash)) =
@@ -253,6 +267,52 @@ instance ToRow SQLPackageVersion where
         , nullable $ SQLText <$> description        -- ^ DESCRIPTION
         , nullable $ SQLText . pack <$> nixpkgsPath -- ^ NIXPATH
         ]
+
+-- | One row of db_REVISION_COMMITS
+data SQLRevisionCommit = SQLRevisionCommit Commit RevisionState
+    deriving (Show, Eq)
+
+instance ToRow SQLRevisionCommit  where
+    toRow (SQLRevisionCommit (Commit hash date) state) =
+        [ SQLText    $ fromHash hash        -- ^ HASH
+        , SQLInteger $ dayToInt date        -- ^ DAY
+        , SQLText    $ pack $ show state    -- ^ STATE
+        ]
+
+instance FromRow SQLRevisionCommit  where
+    fromRow = create
+        <$> (SQL.field <&> Hash)
+        <*> (SQL.field <&> ModifiedJulianDay . fromInteger)
+        <*> (SQL.field <&> read)
+        where
+            create hash date state =
+                SQLRevisionCommit (Commit hash date) state
+
+-------------
+
+instance ToField RevisionState where
+    toField =  SQLText . pack . show
+
+instance FromField RevisionState where
+    fromField = fmap read  . fromField
+
+instance ToField Name where
+    toField = SQLText . fromName
+
+instance FromField Name where
+    fromField = fmap Name . fromField
+
+instance ToField Hash where
+    toField = SQLText . fromHash
+
+instance FromField Hash where
+    fromField = fmap Hash . fromField
+
+instance ToField Channel where
+    toField = SQLText . pack . show
+
+instance FromField Channel where
+    fromField = fmap read . fromField
 
 nullable :: Maybe SQLData -> SQLData
 nullable = fromMaybe SQLNull
