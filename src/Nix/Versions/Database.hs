@@ -29,12 +29,11 @@ module Nix.Versions.Database
 import Control.Concurrent.Async (mapConcurrently_)
 import Control.Monad.Catch (MonadMask, bracket)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Data.Int (Int64)
 import Data.Functor ((<&>))
 import Data.Maybe (fromMaybe)
 import Data.String (fromString, IsString)
 import Data.Text (Text, pack, unpack)
-import Data.Time.Calendar (Day(..), toModifiedJulianDay)
+import Data.Time.Calendar (Day(..))
 import Database.SQLite.Simple (ToRow(toRow), FromRow(fromRow), SQLData(..), NamedParam((:=)))
 import Database.SQLite.Simple.FromField (FromField(..))
 import Database.SQLite.Simple.ToField (ToField(..))
@@ -229,9 +228,9 @@ data SQLRevision = SQLRevision Day Revision RevisionState
 instance FromRow SQLRevision where
     fromRow = construct
         <$> SQL.field
-        <*> (SQL.field <&> ModifiedJulianDay . fromInteger)
         <*> SQL.field
-        <*> (SQL.field <&> ModifiedJulianDay . fromInteger)
+        <*> SQL.field
+        <*> SQL.field
         <*> SQL.field
         where
             construct :: Hash -> Day -> Channel -> Day -> RevisionState -> SQLRevision
@@ -246,7 +245,7 @@ instance ToRow SQLRevisionRow  where
     toRow (SQLRevisionRow hash channel day) =
         [ toField hash
         , toField channel
-        , SQLInteger $ dayToInt day
+        , toField day
         ]
 
 instance FromRow SQLRevisionRow  where
@@ -261,11 +260,11 @@ newtype SQLPackageVersion = SQLPackageVersion (Name, Package, Hash)
 
 instance ToRow SQLPackageVersion where
     toRow (SQLPackageVersion (name, Package { description, nixpkgsPath, version }, hash)) =
-        [ SQLText $ fromName name                   -- ^ PACKAGE_NAME
-        , SQLText $ fromVersion version             -- ^ VERSION_NAME
-        , SQLText $ fromHash hash                   -- ^ REVISION_HASH
-        , nullable $ SQLText <$> description        -- ^ DESCRIPTION
-        , nullable $ SQLText . pack <$> nixpkgsPath -- ^ NIXPATH
+        [ toField name         -- ^ PACKAGE_NAME
+        , toField version      -- ^ VERSION_NAME
+        , toField hash         -- ^ REVISION_HASH
+        , nullable description -- ^ DESCRIPTION
+        , nullable nixpkgsPath -- ^ NIXPATH
         ]
 
 -- | One row of db_REVISION_COMMITS
@@ -274,16 +273,16 @@ data SQLRevisionCommit = SQLRevisionCommit Commit RevisionState
 
 instance ToRow SQLRevisionCommit  where
     toRow (SQLRevisionCommit (Commit hash date) state) =
-        [ SQLText    $ fromHash hash        -- ^ HASH
-        , SQLInteger $ dayToInt date        -- ^ DAY
-        , SQLText    $ pack $ show state    -- ^ STATE
+        [ toField hash     -- ^ HASH
+        , toField date     -- ^ DAY
+        , toField state    -- ^ STATE
         ]
 
 instance FromRow SQLRevisionCommit  where
     fromRow = create
-        <$> (SQL.field <&> Hash)
-        <*> (SQL.field <&> ModifiedJulianDay . fromInteger)
-        <*> (SQL.field <&> read)
+        <$> SQL.field
+        <*> SQL.field
+        <*> SQL.field
         where
             create hash date state =
                 SQLRevisionCommit (Commit hash date) state
@@ -314,8 +313,14 @@ instance ToField Channel where
 instance FromField Channel where
     fromField = fmap read . fromField
 
-nullable :: Maybe SQLData -> SQLData
-nullable = fromMaybe SQLNull
+instance ToField Version where
+    toField = SQLText . fromVersion
+
+instance FromField Version where
+    fromField = fmap Version . fromField
+
+nullable :: ToField a => Maybe a -> SQLData
+nullable = fromMaybe SQLNull . fmap toField
 
 instance FromRow SQLPackageVersion where
     fromRow = create
@@ -336,6 +341,3 @@ instance FromRow SQLPackageVersion where
                         }
                     , revision
                     )
-
-dayToInt :: Day -> Int64
-dayToInt = fromInteger . toModifiedJulianDay

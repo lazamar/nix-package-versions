@@ -39,18 +39,30 @@ import System.Process (readCreateProcessWithExitCode, shell, CreateProcess(..))
 import qualified Network.HTTP.Req as Req
 
 -- | A Nix distribution channel.
--- There is a one to one correlation between nix channels and branches in NixOs/nixpkgs
+-- These are the channels we care about. There are many other channels that
+-- are not worth keeping track of
 data Channel
-    = Nixpkgs_18_09
-    | Nixpkgs_19_03
-    | Nixpkgs_19_09
-    | Nixpkgs_20_03
-    | Nixpkgs_unstable
-    | Nixos_18_09
-    | Nixos_19_03
-    | Nixos_19_09
-    | Nixos_20_03
+    = Nixpkgs_unstable
+    | Nixpkgs_20_03_darwin
+    | Nixpkgs_19_09_darwin
+    | Nixpkgs_19_03_darwin
+    | Nixpkgs_18_09_darwin
+    | Nixpkgs_18_03_darwin
+    | Nixpkgs_17_09_darwin
     | Nixos_unstable
+    | Nixos_20_03
+    | Nixos_19_09
+    | Nixos_19_03
+    | Nixos_18_09
+    | Nixos_18_03
+    | Nixos_17_09
+    | Nixos_17_03
+    | Nixos_16_09
+    | Nixos_16_03
+    | Nixos_15_09
+    | Nixos_14_12
+    | Nixos_14_04
+    | Nixos_13_10
     deriving (Show, Read, Eq, Bounded, Enum, Ord)
 
 -- | The contents of a json file with package information
@@ -132,21 +144,32 @@ revisionsOn guser channel day
 gnixpkgs :: GitHubRepo
 gnixpkgs = GitHubRepo
     { g_user = "NixOS"
-    , g_repo = "nixpkgs"
+    , g_repo = "nixpkgs-channels"
     }
 
 channelBranch :: Channel -> GitBranch
 channelBranch = GitBranch . \case
-    Nixpkgs_18_09    -> "nixpkgs-18.09-darwin"
-    Nixpkgs_19_03    -> "nixpkgs-19.03-darwin"
-    Nixpkgs_19_09    -> "nixpkgs-19.09-darwin"
-    Nixpkgs_20_03    -> "nixpkgs-20.03-darwin"
-    Nixpkgs_unstable -> "nixpkgs-unstable"
-    Nixos_18_09      -> "nixos-18.09"
-    Nixos_19_03      -> "nixos-19.03"
-    Nixos_19_09      -> "nixos-19.09"
-    Nixos_20_03      -> "nixos-20.03"
-    Nixos_unstable   -> "nixos-unstable"
+    Nixpkgs_unstable     -> "nixpkgs-unstable"
+    Nixpkgs_20_03_darwin -> "nixpkgs-20.03-darwin"
+    Nixpkgs_19_09_darwin -> "nixpkgs-19.09-darwin"
+    Nixpkgs_19_03_darwin -> "nixpkgs-19.03-darwin"
+    Nixpkgs_18_09_darwin -> "nixpkgs-18.09-darwin"
+    Nixpkgs_18_03_darwin -> "nixpkgs-18.03-darwin"
+    Nixpkgs_17_09_darwin -> "nixpkgs-17.09-darwin"
+    Nixos_unstable       -> "nixos-unstable"
+    Nixos_20_03          -> "nixos-20.03"
+    Nixos_19_09          -> "nixos-19.09"
+    Nixos_19_03          -> "nixos-19.03"
+    Nixos_18_09          -> "nixos-18.09"
+    Nixos_18_03          -> "nixos-18.03"
+    Nixos_17_09          -> "nixos-17.09"
+    Nixos_17_03          -> "nixos-17.03"
+    Nixos_16_09          -> "nixos-16.09"
+    Nixos_16_03          -> "nixos-16.03"
+    Nixos_15_09          -> "nixos-15.09"
+    Nixos_14_12          -> "nixos-14.12"
+    Nixos_14_04          -> "nixos-14.04"
+    Nixos_13_10          -> "nixos-13.10"
 
 -------------------------------------------------------------------------------
 -- GitHub
