@@ -25,7 +25,7 @@ module Nix.Versions.Database
     -- Read
     , versions
     , revisions
-    , revisionCommit
+    , commitState
     ) where
 
 import Control.Monad.Conc.Class (MonadConc)
@@ -149,15 +149,15 @@ revisions (Connection conn) channel = liftIO $ do
         [show channel]
     return $ toInfo <$> results
 
-revisionCommit :: MonadIO m => Connection -> Hash ->  m (Maybe (Commit, RevisionState))
-revisionCommit  (Connection conn) (Hash hash) = liftIO $ do
-    commits <- SQL.query
+commitState :: MonadIO m => Connection -> Commit -> m (Maybe RevisionState)
+commitState   (Connection conn) (Commit (Hash hash) _) = do
+    commits <- liftIO $ SQL.query
         conn
         ("SELECT * FROM " <> db_REVISION_COMMITS <> " AND HASH = ?")
         [show hash]
     return $ assert (length commits <= 1) $ toResult <$> listToMaybe commits
     where
-        toResult (SQLRevisionCommit commit state) = (commit, state)
+        toResult (SQLRevisionCommit _ state) = state
 
 
 toInfo :: SQLRevision -> (Day, Revision, RevisionState)

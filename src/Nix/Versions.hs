@@ -119,8 +119,8 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
             return rev
 
         download conn day revision@(Revision channel commit) = do
-            s <- commitState conn commit
-            case s of
+            mState <-  DB.commitState conn commit
+            case mState  of
                 -- Commit is already in database
                 Just _ -> do
                     DB.saveRevision conn day revision
@@ -137,18 +137,6 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
                             liftIO $ putStrLn $ "Saving Nix result for" <> show revision
                             DB.saveRevisionWithPackages conn day revision packages
                             return $ Right $ revision
-
-        -- Check whether we already saved the packages associated
-        -- with that nixpkgs commit. If we did, just register that this
-        -- revision is also valid for our current channel
-        commitState :: _ => DB.Connection -> Commit -> m (Maybe RevisionState)
-        commitState  conn (Commit hash _) = do
-            mCommit <- DB.revisionCommit conn hash
-            return $ case snd <$> mCommit of
-                Just Success         -> Just Success
-                Just InvalidRevision -> Just InvalidRevision
-                _                    -> Nothing
-
 
 newtype Week = Week Int
     deriving (Eq, Show, Ord)
