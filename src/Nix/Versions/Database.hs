@@ -153,7 +153,7 @@ commitState :: MonadIO m => Connection -> Commit -> m (Maybe RevisionState)
 commitState   (Connection conn) (Commit (Hash hash) _) = do
     commits <- liftIO $ SQL.query
         conn
-        ("SELECT * FROM " <> db_REVISION_COMMITS <> " AND HASH = ?")
+        ("SELECT * FROM " <> db_REVISION_COMMITS <> " WHERE HASH = ?")
         [show hash]
     return $ assert (length commits <= 1) $ toResult <$> listToMaybe commits
     where

@@ -14,7 +14,7 @@ import Control.Monad (mapM_)
 import Control.Monad.Log2 (runLoggerT, pretty)
 import Control.Monad.Log (logInfo)
 import Options.Applicative
-    (info, option, auto, helper, switch, maybeReader, help, metavar, fullDesc, progDesc
+    (info, option, auto, str, helper, switch, help, metavar, fullDesc, progDesc
     , header, long, showDefault, value, Parser, execParser, (<**>)
     )
 import Data.Semigroup ((<>))
@@ -85,13 +85,13 @@ cliOptions  = execParser $ info
                   ( long "update-versions"
                   <> help "Download new package versions from Nix instead of running a server"
                   )
-            <*> option (maybeReader readMaybe)
+            <*> option (readMaybe <$> str)
                   ( long "from"
                   <> help "The date to download data from. YYYY-MM-DD"
                   <> value Nothing
                   <> metavar "DATE"
                   )
-            <*> option (maybeReader readMaybe)
+            <*> option (readMaybe <$> str)
                   ( long "until"
                   <> help "The date to download data until. YYYY-MM-DD"
                   <> value Nothing

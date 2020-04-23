@@ -4,6 +4,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Nix.Versions
     ( savePackageVersionsForPeriod
@@ -11,14 +12,16 @@ module Nix.Versions
 
 import Control.Applicative ((<*))
 import Control.Concurrent.Classy.Async (async, wait)
-import Control.Monad.Conc.Class (MonadConc, STM, atomically, getNumCapabilities)
+import Control.Concurrent.Classy.MVar (MVar, readMVar, putMVar, newMVar, takeMVar, modifyMVar)
+import Control.Monad.Conc.Class (MonadConc, STM, atomically, getNumCapabilities, threadDelay, fork)
 import Control.Monad.STM.Class (TVar, newTVar, readTVar, writeTVar, retry)
-import Control.Monad ((<=<), (>>), foldM)
+import Control.Monad ((<=<), (>>), foldM, forever, void)
 import Control.Monad.Catch (MonadMask)
 import Control.Monad.Except (liftIO )
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Log (MonadLog, WithSeverity)
 import Data.Hashable (Hashable)
+import Data.Maybe (isJust)
 import Data.Set (Set)
 import Data.Text (pack)
 import Data.Time.Calendar (Day, showGregorian)
@@ -34,12 +37,14 @@ import qualified Data.Set as Set
 -- for commits between 'to' and 'from' dates and save them to
 -- the database.
 savePackageVersionsForPeriod
-    :: (MonadMask m, MonadConc m, MonadIO m, MonadLog (WithSeverity String) m)
+    :: forall m . (MonadMask m, MonadConc m, MonadIO m, MonadLog (WithSeverity String) m)
     => Config -> Day -> Day -> m [Either String Revision]
 savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
     DB.withConnection cacheDir dbFile $ \conn -> do
         key <- newConcKey
-        allRevisions <- limitedConcurrency key $ map (revisionsForChannel conn) allChannels
+        threadMonitor key
+        attempted <- newMVar mempty
+        allRevisions <- limitedConcurrency key $ map (revisionsForChannel conn attempted) allChannels
         return $ concat allRevisions
     where
         allChannels :: [Channel]
@@ -50,12 +55,6 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
             = Set.fromList
             $ filter (isWeekOfInterest . snd)
             $ toWeek <$> [from .. to]
-
-        triedRevisions :: [(Day, Revision, RevisionState)] -> Set Revision
-        triedRevisions
-            = Set.fromList
-            . fmap (\(_,rev,_) -> rev)
-            . filter reachedFinalState
 
         -- TODO: Currently any week with a revision that reached the final state
         -- is considered to be available. We want to change that so that a week
@@ -77,19 +76,18 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
 
         revDate (day, _, _) = day
 
-        revisionsForChannel :: _ => Connection -> Channel -> m [Either String Revision]
-        revisionsForChannel conn channel = do
+        revisionsForChannel :: _ => Connection -> MVar m (Set Commit) -> Channel -> m [Either String Revision]
+        revisionsForChannel conn attempted channel = do
             revisions <- DB.revisions conn channel
             -- TODO: Add log of what is being skipped
             -- One day per week of interest
-            let alreadyTried = triedRevisions revisions
-                daysNeeded
+            let daysNeeded
                     = map toDay
                     $ Set.toList
                     $ weeksAsked `Set.difference` weeksAvailable revisions
-            traverse (downloadForDay conn channel alreadyTried) daysNeeded
+            traverse (downloadForDay conn attempted channel) daysNeeded
 
-        downloadForDay conn channel alreadyTried day = do
+        downloadForDay conn attempted channel day = do
             eRevisions <- revisionsOn gitUser channel day
             case eRevisions of
                 Left err ->
@@ -107,27 +105,29 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
                     let maxAttempts = 20
                     in
                     tryInSequence (day, channel, "Unable to create dervation after " <> show maxAttempts <> " attempts.")
-                        $ fmap (download conn day <=< announce day)
+                        $ fmap (download conn attempted day)
                         $ take maxAttempts
                         $ zip [1..]
-                        $ filter (not . (`Set.member` alreadyTried))
                         $ revisions
 
-        announce :: _ => Day -> (Int, Revision) -> m Revision
-        announce day (tryCount, rev@(Revision _ (Commit hash _))) = do
-            liftIO $ putStrLn $ "Attempt " <> show tryCount <> ". Downloading files for " <> showGregorian day <> ". " <> show hash
-            return rev
+        download conn attempted day (tryCount, revision@(Revision channel commit)) = do
+            inDB <- isJust <$> DB.commitState conn commit
 
-        download conn day revision@(Revision channel commit) = do
-            mState <-  DB.commitState conn commit
-            case mState  of
-                -- Commit is already in database
-                Just _ -> do
+            shouldDownload <- modifyMVar attempted $ \commitSet ->
+                let inFlight = Set.member commit commitSet
+                in
+                if inDB || inFlight
+                    then return (commitSet, False)
+                    else do
+                        DB.saveCommit conn commit PreDownload
+                        return (Set.insert commit commitSet, True)
+
+            if not shouldDownload
+                then do
                     DB.saveRevision conn day revision
                     return $ Right $ revision
-                -- Is new commit
-                Nothing -> do
-                    DB.saveCommit conn commit PreDownload
+                else do
+                    announce day tryCount commit
                     eRev <- build revision
                     case eRev of
                         Left  err -> do
@@ -137,6 +137,18 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
                             liftIO $ putStrLn $ "Saving Nix result for" <> show revision
                             DB.saveRevisionWithPackages conn day revision packages
                             return $ Right $ revision
+
+        announce :: _ => Day -> Int -> Commit -> m ()
+        announce day tryCount (Commit hash _) =
+            liftIO
+                $ putStrLn
+                $ "Attempt "
+                    <> show tryCount
+                    <> ". Downloading files for "
+                    <> showGregorian day
+                    <> ". "
+                    <> show hash
+
 
 newtype Week = Week Int
     deriving (Eq, Show, Ord)
@@ -203,4 +215,12 @@ newConcKey = do
     maxConcurrency <- getNumCapabilities
     activeThreads  <- atomically $ newTVar 0
     return $ ConcKey maxConcurrency activeThreads
+
+
+threadMonitor :: (MonadIO m, MonadConc m) => ConcKey m -> m ()
+threadMonitor ConcKey{..} =
+    void $ fork $ forever $ do
+        threadDelay 5000000
+        active <- atomically $ readTVar activeThreads
+        liftIO $ putStrLn $ "Active threads: " <> show active
 
