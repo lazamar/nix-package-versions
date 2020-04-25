@@ -13,16 +13,14 @@ module Nix.Versions
 
 import Control.Applicative ((<*))
 import Control.Concurrent.Classy.Async (async, wait)
-import Control.Concurrent.Classy.MVar (MVar, readMVar, putMVar, newMVar, takeMVar, modifyMVar)
-import Control.Monad.Conc.Class (MonadConc, STM, atomically, getNumCapabilities, threadDelay, fork)
+import Control.Monad.Conc.Class (MonadConc, STM, atomically, getNumCapabilities, threadDelay, fork, killThread)
 import Control.Monad.STM.Class (TVar, newTVar, readTVar, writeTVar, retry)
-import Control.Monad ((<=<), (>>), foldM, forever, void)
+import Control.Monad ((>>), foldM, forever, void)
 import Control.Monad.Catch (MonadMask)
 import Control.Monad.Except (liftIO )
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Log (MonadLog, WithSeverity)
 import Data.Hashable (Hashable)
-import Data.Maybe (isJust)
 import Data.Set (Set)
 import Data.Text (pack)
 import Data.Time.Calendar (Day, showGregorian)
@@ -44,8 +42,7 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
     DB.withConnection cacheDir dbFile $ \conn -> do
         key <- newConcKey
         threadMonitor key
-        attempted <- newMVar mempty
-        allRevisions <- limitedConcurrency key $ map (revisionsForChannel conn attempted) allChannels
+        allRevisions <- limitedConcurrency key $ map (revisionsForChannel conn) allChannels
         return $ concat allRevisions
     where
         allChannels :: [Channel]
@@ -74,12 +71,13 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
             Success         -> True
             InvalidRevision -> True
             Incomplete      -> False
+            PreDownload     -> False
 
         revDate (day, _, _)  = day
         revState (_,_,state) = state
 
-        revisionsForChannel :: _ => Connection -> MVar m (Set Commit) -> Channel -> m [Either String String]
-        revisionsForChannel conn attempted channel = do
+        revisionsForChannel :: _ => Connection -> Channel -> m [Either String String]
+        revisionsForChannel conn channel = do
             revisions <- DB.revisions conn channel
             -- TODO: Add log of what is being skipped
             -- One day per week of interest
@@ -87,9 +85,9 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
                     = map toDay
                     $ Set.toList
                     $ weeksAsked `Set.difference` weeksAvailable revisions
-            traverse (downloadForDay conn attempted channel) daysNeeded
+            traverse (downloadForDay conn channel) daysNeeded
 
-        downloadForDay conn attempted channel day = do
+        downloadForDay conn channel day = do
             eRevisions <- revisionsOn gitUser channel day
             case eRevisions of
                 Left err ->
@@ -107,12 +105,12 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
                     let maxAttempts = 20
                     in
                     tryInSequence (day, channel, "Unable to create dervation after " <> show maxAttempts <> " attempts.")
-                        $ fmap (download conn attempted day)
+                        $ fmap (download conn day)
                         $ take maxAttempts
-                        $ zip [1..]
+                        $ zip ([1..] :: [Int])
                         $ revisions
 
-        download conn attempted day (tryCount, revision@(Revision channel commit)) = do
+        download conn day (tryCount, revision@(Revision channel commit)) = do
             mState <- DB.revisionState conn revision
             let shouldDownload = maybe False isFinalState mState
             if not shouldDownload
@@ -202,9 +200,17 @@ newConcKey = do
 
 
 threadMonitor :: (MonadIO m, MonadConc m) => ConcKey m -> m ()
-threadMonitor ConcKey{..} =
-    void $ fork $ forever $ do
+threadMonitor ConcKey{..} = do
+    loggerId <- fork $ forever $ do
         threadDelay 5000000
         active <- atomically $ readTVar activeThreads
         liftIO $ putStrLn $ "Active threads: " <> show active
 
+    void $ fork $ do
+        threadDelay 5000000
+        atomically $ do
+            active <- readTVar activeThreads
+            if active == 0
+               then return ()
+               else retry
+        killThread loggerId

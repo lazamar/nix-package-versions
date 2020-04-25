@@ -63,10 +63,36 @@ spec = do
                 () <- P.saveRevisionWithPackages conn day otherRevision otherPackages
                 v1 <- P.versions conn defaultChannel pname
                 v2 <- P.versions conn otherChannel   pname
-                (snd <$> v1) `shouldBe` [pkg]
-                (snd <$> v2) `shouldBe` [otherPkg]
+                (getPackage <$> v1) `shouldBe` [pkg]
+                (getPackage <$> v2) `shouldBe` [otherPkg]
                 pkg `shouldNotBe` otherPkg
 
+        it "When inserting the same package version with a more recent revision, the record is overriden" $ do
+            overDatabase $ \conn -> do
+                let newDay = succ day
+                    Commit hash _ = commit
+
+                () <- P.saveRevisionWithPackages conn day revision packages
+                v1 <- P.versions conn defaultChannel pname
+                () <- P.saveRevisionWithPackages conn newDay revision packages
+                v2 <- P.versions conn defaultChannel pname
+                v1 `shouldBe` [(pkg, hash, day)]
+                v2 `shouldBe` [(pkg, hash, newDay)]
+
+        it "When inserting the same package version with an older revision, the record is not overriden" $ do
+            overDatabase $ \conn -> do
+                let newDay = succ day
+                    Commit hash _ = commit
+
+                () <- P.saveRevisionWithPackages conn newDay revision packages
+                v1 <- P.versions conn defaultChannel pname
+                () <- P.saveRevisionWithPackages conn day revision packages
+                v2 <- P.versions conn defaultChannel pname
+                v1 `shouldBe` [(pkg, hash, newDay)]
+                v2 `shouldBe` [(pkg, hash, newDay)]
+
+getPackage (p,_,_) = p
+getRepresents (_,_,r) = r
 
 
 

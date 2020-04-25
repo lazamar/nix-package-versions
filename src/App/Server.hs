@@ -91,7 +91,7 @@ pageHome conn request = do
                        then H.p "No results found"
                        else mapM_ (toRow name) results
 
-        toRow (Name name) (Hash hash, Package _ (Version v) _) =
+        toRow (Name name) (Package _ (Version v) _, Hash hash, _) =
             H.tr do
                 H.td $ H.text name
                 H.td $ H.text v

@@ -100,7 +100,7 @@ withConnection cache file = bracket (connect cache file) disconnect
 -- | Retrieve all versions available for a package
 -- This will be on the order of the tens, or maximum the
 -- hundreds, so it is fine to just return all of them
-versions :: MonadIO m => Connection -> Channel -> Name -> m [(Hash, Package)]
+versions :: MonadIO m => Connection -> Channel -> Name -> m [(Package, Hash, Day)]
 versions (Connection conn) channel name = liftIO $ do
     results <- SQL.queryNamed
         conn
@@ -116,7 +116,7 @@ versions (Connection conn) channel name = liftIO $ do
         ]
     return $ toVersionInfo <$> results
         where
-            toVersionInfo (SQLPackage _ pkg _ hash _) = (hash, pkg)
+            toVersionInfo (SQLPackage _ pkg _ hash represents) = (pkg, hash, represents)
 
 -- | Retrieve all revisions available in the database
 -- This will be between one hundred and one thousand.
