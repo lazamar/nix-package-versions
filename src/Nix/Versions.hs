@@ -5,6 +5,7 @@
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Nix.Versions
     ( savePackageVersionsForPeriod
@@ -38,7 +39,7 @@ import qualified Data.Set as Set
 -- the database.
 savePackageVersionsForPeriod
     :: forall m . (MonadMask m, MonadConc m, MonadIO m, MonadLog (WithSeverity String) m)
-    => Config -> Day -> Day -> m [Either String Revision]
+    => Config -> Day -> Day -> m [Either String String]
 savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
     DB.withConnection cacheDir dbFile $ \conn -> do
         key <- newConcKey
@@ -65,18 +66,19 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
         weeksAvailable
             = Set.fromList
             . fmap (toWeek . revDate)
-            . filter reachedFinalState
+            . filter (isFinalState . revState)
 
         -- | Reaching a final state means that it is not worth it trying to
         -- download that revision again.
-        reachedFinalState (_,_,state) = case state of
+        isFinalState = \case
             Success         -> True
             InvalidRevision -> True
             Incomplete      -> False
 
-        revDate (day, _, _) = day
+        revDate (day, _, _)  = day
+        revState (_,_,state) = state
 
-        revisionsForChannel :: _ => Connection -> MVar m (Set Commit) -> Channel -> m [Either String Revision]
+        revisionsForChannel :: _ => Connection -> MVar m (Set Commit) -> Channel -> m [Either String String]
         revisionsForChannel conn attempted channel = do
             revisions <- DB.revisions conn channel
             -- TODO: Add log of what is being skipped
@@ -95,7 +97,7 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
 
                 Right [] -> do
                     -- Placeholder revision just to say that this day is invalid
-                    DB.saveRevisionWithState conn day (Revision channel (Commit (Hash $ pack $ show day) day)) InvalidRevision
+                    DB.saveRevision conn day (Revision channel (Commit (Hash $ pack $ show day) day)) InvalidRevision
                     let msg = "No commits found for " <> show day
                     liftIO $ putStrLn msg
                     return $ Left msg
@@ -111,44 +113,26 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
                         $ revisions
 
         download conn attempted day (tryCount, revision@(Revision channel commit)) = do
-            inDB <- isJust <$> DB.commitState conn commit
-
-            shouldDownload <- modifyMVar attempted $ \commitSet ->
-                let inFlight = Set.member commit commitSet
-                in
-                if inDB || inFlight
-                    then return (commitSet, False)
-                    else do
-                        DB.saveCommit conn commit PreDownload
-                        return (Set.insert commit commitSet, True)
-
+            mState <- DB.revisionState conn revision
+            let shouldDownload = maybe False isFinalState mState
             if not shouldDownload
-                then do
-                    DB.saveRevision conn day revision
-                    return $ Right $ revision
+                then return $ Right $ msg "Skipped"
                 else do
-                    announce day tryCount commit
+                    DB.saveRevision conn day revision PreDownload
+                    liftIO $ putStrLn $ msg $ "Attempt " <> show tryCount
                     eRev <- build revision
                     case eRev of
                         Left  err -> do
-                            DB.saveRevisionWithState conn day revision InvalidRevision
-                            return (Left (day, channel, err))
+                            DB.saveRevision conn day revision InvalidRevision
+                            return $ Left (day, channel, err)
                         Right packages -> do
-                            liftIO $ putStrLn $ "Saving Nix result for" <> show revision
+                            liftIO $ putStrLn $ msg "Saving Nix result"
                             DB.saveRevisionWithPackages conn day revision packages
-                            return $ Right $ revision
-
-        announce :: _ => Day -> Int -> Commit -> m ()
-        announce day tryCount (Commit hash _) =
-            liftIO
-                $ putStrLn
-                $ "Attempt "
-                    <> show tryCount
-                    <> ". Downloading files for "
-                    <> showGregorian day
-                    <> ". "
-                    <> show hash
-
+                            return $ Right $ msg "Downloaded"
+            where
+                Commit hash _ = commit
+                padded = take 20 . (<> repeat ' ')
+                msg txt = unwords [padded txt, showGregorian day, show channel, show hash]
 
 newtype Week = Week Int
     deriving (Eq, Show, Ord)
