@@ -100,6 +100,29 @@ ensureTablesAreCreated conn = do
                         <> ", PRIMARY KEY (PACKAGE_NAME, VERSION_NAME, REVISION_HASH)"
                         <> ", FOREIGN KEY (REVISION_HASH) REFERENCES " <> db_REVISION_COMMITS <> "(HASH)"
                         <> ")"
+-- ===========================================================================================================
+-- NEW TABLES
+    SQL.execute_ conn $ "CREATE TABLE IF NOT EXISTS revision"
+                        <> "( COMMIT_HASH       TEXT NOT NULL"
+                        <> ", COMMIT_DATE       TEXT NOT NULL"
+                        <> ", CHANNEL           TEXT NOT NULL"
+                        <> ", REPRESENTS_DATE   TEXT NOT NULL"
+                        <> ", STATE             TEXT NOT NULL"
+                        <> ", PRIMARY KEY (CHANNEL, COMMIT_HASH, REPRESENTS_DATE)"
+                        <> ")"
+
+    SQL.execute_ conn $ "CREATE TABLE IF NOT EXISTS package"
+                        <> "( NAME              TEXT NOT NULL"
+                        <> ", VERSION           TEXT NOT NULL"
+                        <> ", CHANNEL           TEXT NOT NULL"
+                        <> ", COMMIT_HASH       TEXT NOT NULL"
+                        <> ", DESCRIPTION       TEXT"
+                        <> ", NIXPATH           TEXT"
+                        <> ", REPRESENTS_DATE   TEXT NOT NULL"
+                        <> ", PRIMARY KEY (NAME, VERSION, CHANNEL)"
+                        <> ", FOREIGN KEY (CHANNEL, COMMIT_HASH, REPRESENTS_DATE) REFERENCES revision (CHANNEL, COMMIT_HASH, REPRESENTS_DATE)"
+                        <> ")"
+
 
 disconnect :: MonadIO m => Connection -> m ()
 disconnect (Connection conn) = liftIO $ SQL.close conn
