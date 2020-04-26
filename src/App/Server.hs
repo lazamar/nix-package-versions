@@ -47,18 +47,66 @@ pageHome conn request = do
     mPackages <- traverse getVersions mSearchedPackage
     return $ responseLBS status200 [("Content-Type", "text/html")] $ renderHtml $
         H.docTypeHtml do
-        H.body do
+        H.head do
+            H.link
+                ! A.rel "stylesheet"
+                ! A.href "https://unpkg.com/purecss@1.0.1/build/pure-min.css"
+            H.meta
+                ! A.name "viewport"
+                ! A.content "width=device-width, initial-scale=1"
+            H.style do
+                "section { max-width: 768px; margin: auto }"
+
+        H.body $ H.section do
+            H.h1 "Nix package versions"
+            H.p  "Find all versions of a package that were available in a channel and the revision you can download it from."
             H.form
                 ! A.action "."
                 ! A.method "GET"
+                ! A.class_ "pure-form pure-form-aligned"
                 $ do
-                selectBox channelKey show selectedChannel [minBound..]
-                H.input
-                    ! A.type_ "text"
-                    ! A.value (fromString $ Text.unpack $ fromMaybe ""  mSearchedPackage)
-                    ! A.name (fromString pkgKey)
-                    ! A.placeholder "Package name"
+                H.fieldset $ do
+                    H.div ! A.class_ "pure-control-group" $ do
+                        H.label "Nix channel"
+                        selectBox channelKey show selectedChannel [minBound..]
+
+                    H.div ! A.class_ "pure-control-group" $ do
+                        H.label "Package name"
+                        H.input
+                            ! A.type_ "text"
+                            ! A.value (fromString $ Text.unpack $ fromMaybe ""  mSearchedPackage)
+                            ! A.name (fromString pkgKey)
+                            ! A.placeholder "Package name"
+
+                    H.div ! A.class_ "pure-controls" $ do
+                        H.input
+                            ! A.type_ "submit"
+                            ! A.value "Search"
+                            ! A.class_ "pure-button pure-button-primary"
             createResults mPackages
+
+            H.h2 "Downloading older package versions"
+            H.pre $
+                fromString $ unlines
+                    [ "import (builtins.fetchGit {                                                     "
+                    , "    # Descriptive name to make the store path easier to identify                "
+                    , "    name = \"nixos-unstable-2018-09-12\";                                       "
+                    , "    url = \"https://github.com/nixos/nixpkgs-channels/\";                       "
+                    , "    # Commit hash for nixos-unstable as of 2018-09-12                           "
+                    , "    # `git ls-remote https://github.com/nixos/nixpkgs-channels nixos-unstable`  "
+                    , "    ref = \"refs/heads/nixos-unstable\";                                        "
+                    , "    rev = \"ca2ba44cab47767c8127d1c8633e2b581644eb8f\";                         "
+                    , "}) {}                                                                           "
+                    ]
+
+            H.p
+                ! A.style "text-align: center"
+                $ do
+                "Created by "
+                H.a ! A.href "http://lazamar.github.io/" $
+                    "Marcelo Lazaroni"
+
+
     where
         pkgKey = "package"
 
@@ -81,7 +129,10 @@ pageHome conn request = do
 
         createResults Nothing                 = mempty
         createResults (Just (name, results)) =
-            H.table ! A.class_ "table" $ do
+            H.table
+                ! A.class_ "mq-table pure-table-bordered pure-table"
+                ! A.style "width: 100%"
+                $ do
                 H.thead $ H.tr do
                     H.th "Attribute Name"
                     H.th "Version"
@@ -89,10 +140,12 @@ pageHome conn request = do
                 H.tbody $
                     if null results
                        then H.p "No results found"
-                       else mapM_ (toRow name) results
+                       else mapM_ (toRow name) $ zip [0..] results
 
-        toRow (Name name) (Package _ (Version v) _, Hash hash, _) =
-            H.tr do
+        toRow (Name name) (ix, (Package _ (Version v) _, Hash hash, _)) =
+            H.tr
+                ! (if odd ix then A.class_ "pure-table-odd" else mempty)
+                $ do
                 H.td $ H.text name
                 H.td $ H.text v
                 H.td $ H.text hash
