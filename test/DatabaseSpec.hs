@@ -91,9 +91,8 @@ spec = do
                 v1 `shouldBe` [(pkg, hash, newDay)]
                 v2 `shouldBe` [(pkg, hash, newDay)]
 
+getPackage :: (Package, Hash, Day) -> Package
 getPackage (p,_,_) = p
-getRepresents (_,_,r) = r
-
 
 
 

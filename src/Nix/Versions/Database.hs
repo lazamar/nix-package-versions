@@ -28,15 +28,13 @@ module Nix.Versions.Database
 
 import Control.Monad.Conc.Class (MonadConc)
 import Control.Concurrent.Classy.Async (mapConcurrently_)
-import Control.Exception (assert)
 import Control.Monad.Catch (MonadMask, bracket)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad (unless)
 import Data.Maybe (listToMaybe)
-import Data.Functor ((<&>))
 import Data.Maybe (fromMaybe)
 import Data.String (fromString, IsString)
-import Data.Text (Text, pack, unpack)
+import Data.Text (pack)
 import Data.Time.Calendar (Day(..))
 import Database.SQLite.Simple (ToRow(toRow), FromRow(fromRow), SQLData(..), NamedParam((:=)))
 import Database.SQLite.Simple.FromField (FromField(..))
@@ -157,8 +155,6 @@ saveRevisionWithPackages conn represents revision packages = do
     mapConcurrently_ persistPackage (HashMap.toList packages)
     saveRevision conn represents revision Success
     where
-        Revision _ (Commit hash _) = revision
-
         persistPackage (name, package) =
             saveVersion conn name package revision represents
 
