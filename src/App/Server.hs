@@ -6,9 +6,10 @@ module App.Server (run, Port(..)) where
 
 import Control.Arrow ((&&&))
 import Control.Monad (mapM_, join)
+import Data.Either (fromRight)
 import Data.Foldable (traverse_)
 import Data.List (lookup)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, fromJust)
 import Data.String (fromString)
 import Data.Text.Encoding (decodeUtf8)
 import Data.Time.Calendar (Day)
@@ -24,6 +25,7 @@ import qualified Network.Wai.Handler.Warp as Warp
 import qualified Text.Blaze.Html5 as H
 import qualified Text.Blaze.Html5.Attributes as A
 import qualified Data.Text as Text
+import qualified Skylighting as S
 
 import qualified Nix.Versions.Database as Persistent
 
@@ -57,6 +59,7 @@ pageHome conn request = do
                 ! A.content "width=device-width, initial-scale=1"
             H.style do
                 "section { max-width: 768px; margin: auto }"
+                fromString $ S.styleToCss S.pygments
 
         H.body $ H.section do
             H.h1 "Nix package versions"
@@ -91,15 +94,17 @@ pageHome conn request = do
             createResults mPackages
 
             H.h2 "Downloading older package versions"
-            H.pre $
-                fromString $ unlines
+            S.formatHtmlBlock S.defaultFormatOpts
+                $ fromRight []
+                $ S.tokenize (S.TokenizerConfig S.defaultSyntaxMap False) nixSyntax
+                $ Text.unlines
                     [ "import (builtins.fetchGit {                                                     "
                     , "    # Descriptive name to make the store path easier to identify                "
-                    , "    name = \"nixos-unstable-2018-09-12\";                                       "
+                    , "    name = \"my-old-revision\";                                       "
                     , "    url = \"https://github.com/nixos/nixpkgs-channels/\";                       "
-                    , "    # Commit hash for nixos-unstable as of 2018-09-12                           "
-                    , "    # `git ls-remote https://github.com/nixos/nixpkgs-channels nixos-unstable`  "
-                    , "    ref = \"refs/heads/nixos-unstable\";                                        "
+                    , "    # Replace <channel> with the name of the channel you are using              "
+                    , "    ref = \"refs/heads/<channel>\";                                             "
+                    , "    # Replace with the revision hash you want                                   "
                     , "    rev = \"ca2ba44cab47767c8127d1c8633e2b581644eb8f\";                         "
                     , "}) {}                                                                           "
                     ]
@@ -113,6 +118,9 @@ pageHome conn request = do
 
 
     where
+        nixSyntax :: S.Syntax
+        nixSyntax = fromJust $ S.lookupSyntax "nix" S.defaultSyntaxMap
+
         pkgKey = "package"
 
         channelKey = "channel"
