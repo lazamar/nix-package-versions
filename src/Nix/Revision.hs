@@ -16,10 +16,12 @@
 module Nix.Revision
     ( build
     , revisionsOn
+    , channelBranch
     , Revision(..)
     , RevisionPackages
     , Package(..)
     , Channel(..)
+    , GitBranch(..)
     ) where
 
 import Control.Exception (SomeException(..), bracket, handle, tryJust)
@@ -218,7 +220,7 @@ data GitHubCommit = GitHubCommit
     , g_commit :: Commit
     }
 
-newtype GitBranch = GitBranch Text
+newtype GitBranch = GitBranch { fromGitBranch :: Text }
 
 instance FromJSON GitHubCommit where
     parseJSON = withObject "GitHubCommit " $ \v ->

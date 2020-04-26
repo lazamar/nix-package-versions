@@ -4,20 +4,21 @@
 
 module App.Server (run, Port(..)) where
 
+import Control.Arrow ((&&&))
 import Control.Monad (mapM_, join)
 import Data.Foldable (traverse_)
 import Data.List (lookup)
 import Data.Maybe (fromMaybe)
 import Data.String (fromString)
 import Data.Text.Encoding (decodeUtf8)
+import Data.Time.Calendar (Day)
 import Network.HTTP.Types (status200, status404)
 import Network.Wai (Application, Request, Response, responseLBS, rawPathInfo, queryString)
-import Nix.Revision (Package(..), Channel(..))
+import Nix.Revision (Package(..), Channel(..), GitBranch(..), channelBranch)
 import Nix.Versions.Database (Connection)
 import Nix.Versions.Types (Hash(..), Version(..), Config(..), Name(..))
 import Text.Blaze.Html.Renderer.Utf8 (renderHtml)
 import Text.Blaze.Html5 ((!))
-import Text.Read (readMaybe)
 
 import qualified Network.Wai.Handler.Warp as Warp
 import qualified Text.Blaze.Html5 as H
@@ -44,7 +45,7 @@ app conn request respond = do
 
 pageHome :: Connection -> Request -> IO Response
 pageHome conn request = do
-    mPackages <- traverse getVersions mSearchedPackage
+    mPackages <- traverse getVersions mSearched
     return $ responseLBS status200 [("Content-Type", "text/html")] $ renderHtml $
         H.docTypeHtml do
         H.head do
@@ -68,13 +69,17 @@ pageHome conn request = do
                 H.fieldset $ do
                     H.div ! A.class_ "pure-control-group" $ do
                         H.label "Nix channel"
-                        selectBox channelKey show selectedChannel [minBound..]
+                        selectBox
+                            channelKey
+                            toChannelBranch
+                            (fromMaybe Nixpkgs_unstable mSelectedChannel)
+                            [minBound..]
 
                     H.div ! A.class_ "pure-control-group" $ do
                         H.label "Package name"
                         H.input
                             ! A.type_ "text"
-                            ! A.value (fromString $ Text.unpack $ fromMaybe ""  mSearchedPackage)
+                            ! A.value (fromString $ Text.unpack $ maybe "" fromName mSearchedPackage)
                             ! A.name (fromString pkgKey)
                             ! A.placeholder "Package name"
 
@@ -112,14 +117,15 @@ pageHome conn request = do
 
         channelKey = "channel"
 
-        getVersions name = (n,) <$> Persistent.versions conn selectedChannel n
-            where n = Name name
+        getVersions (channel, name) = (name,) <$> Persistent.versions conn channel name
 
-        selectedChannel = fromMaybe Nixpkgs_unstable $ do
+        mSelectedChannel = do
             val <- queryValueFor channelKey
-            readMaybe $ Text.unpack val
+            fromChannelBranch $ Text.unpack val
 
-        mSearchedPackage = queryValueFor pkgKey
+        mSearchedPackage = Name <$> queryValueFor pkgKey
+
+        mSearched = (,) <$> mSelectedChannel <*> mSearchedPackage
 
         queryValueFor key
             = fmap decodeUtf8
@@ -127,7 +133,7 @@ pageHome conn request = do
             $ lookup (fromString key)
             $ queryString request
 
-        createResults Nothing                 = mempty
+        createResults Nothing                = mempty
         createResults (Just (name, results)) =
             H.table
                 ! A.class_ "mq-table pure-table-bordered pure-table"
@@ -142,6 +148,7 @@ pageHome conn request = do
                        then H.p "No results found"
                        else mapM_ (toRow name) $ zip [0..] results
 
+        toRow :: Name -> (Int, (Package, Hash, Day)) -> H.Html
         toRow (Name name) (ix, (Package _ (Version v) _, Hash hash, _)) =
             H.tr
                 ! (if odd ix then A.class_ "pure-table-odd" else mempty)
@@ -168,6 +175,11 @@ selectBox name toString selected options =
                 ! A.value (fromString $ toString value)
                 $ fromString (toString value)
 
+fromChannelBranch :: String -> Maybe Channel
+fromChannelBranch = flip lookup $ (toChannelBranch &&& id) <$> [minBound..]
+
+toChannelBranch :: Channel -> String
+toChannelBranch = Text.unpack . fromGitBranch . channelBranch
 
 
 
