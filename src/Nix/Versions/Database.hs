@@ -135,7 +135,7 @@ revisionState :: MonadIO m => Connection -> Revision -> m (Maybe RevisionState)
 revisionState (Connection conn) (Revision channel (Commit (Hash hash) _)) = do
     commits <- liftIO $ SQL.queryNamed
         conn
-        ("SELECT * FROM " <> db_REVISION_NEW <> " WHERE HASH = :hash AND CHANNEl = :channel")
+        ("SELECT * FROM " <> db_REVISION_NEW <> " WHERE COMMIT_HASH = :hash AND CHANNEl = :channel")
         [ ":hash"    := hash
         , ":channel" := channel
         ]
