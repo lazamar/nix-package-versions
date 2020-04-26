@@ -11,12 +11,11 @@ module Nix.Versions
     ( savePackageVersionsForPeriod
     ) where
 
-import Control.Applicative ((<*))
 import Control.Concurrent.Classy.Async (async, wait)
 import Control.Monad.Conc.Class (MonadConc, STM, atomically, getNumCapabilities, threadDelay, fork, killThread)
 import Control.Monad.STM.Class (TVar, newTVar, readTVar, writeTVar, retry)
-import Control.Monad ((>>), foldM, forever, void)
-import Control.Monad.Catch (MonadMask)
+import Control.Monad ((<=<), (>>), foldM, forever, void)
+import Control.Monad.Catch (MonadMask, finally)
 import Control.Monad.Except (liftIO )
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Log (MonadLog, WithSeverity)
@@ -85,7 +84,11 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
                     = map toDay
                     $ Set.toList
                     $ weeksAsked `Set.difference` weeksAvailable revisions
-            traverse (downloadForDay conn channel) daysNeeded
+            traverse (printAndReturn <=< downloadForDay conn channel) daysNeeded
+            where
+                printAndReturn v = do
+                    liftIO (print v)
+                    return v
 
         downloadForDay conn channel day = do
             eRevisions <- revisionsOn gitUser channel day
@@ -116,8 +119,8 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
             if not shouldDownload
                 then return $ Right $ msg "Skipped"
                 else do
-                    DB.saveRevision conn day revision PreDownload
                     liftIO $ putStrLn $ msg $ "Attempt " <> show tryCount
+                    DB.saveRevision conn day revision PreDownload
                     eRev <- build revision
                     case eRev of
                         Left  err -> do
@@ -173,7 +176,7 @@ limitedConcurrency ConcKey {maxConcurrency, activeThreads} actions = do
         -- | Only run the next action if there is an idle CPU core
         runWhenPossible  acc action = do
             takeCapability
-            a <- async $ action <* releaseCapability
+            a <- async $ finally action releaseCapability
             return $ a:acc
 
         takeCapability = atomically $ do
@@ -196,7 +199,7 @@ newConcKey :: MonadConc m => m (ConcKey m)
 newConcKey = do
     maxConcurrency <- getNumCapabilities
     activeThreads  <- atomically $ newTVar 0
-    return $ ConcKey maxConcurrency activeThreads
+    return $ ConcKey (maxConcurrency - 1) activeThreads
 
 
 threadMonitor :: (MonadIO m, MonadConc m) => ConcKey m -> m ()
@@ -214,3 +217,4 @@ threadMonitor ConcKey{..} = do
                then return ()
                else retry
         killThread loggerId
+    liftIO $ putStrLn "What?"
