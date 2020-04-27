@@ -199,7 +199,7 @@ newConcKey :: MonadConc m => m (ConcKey m)
 newConcKey = do
     maxConcurrency <- getNumCapabilities
     activeThreads  <- atomically $ newTVar 0
-    return $ ConcKey (maxConcurrency - 1) activeThreads
+    return $ ConcKey maxConcurrency activeThreads
 
 
 threadMonitor :: (MonadIO m, MonadConc m) => ConcKey m -> m ()
