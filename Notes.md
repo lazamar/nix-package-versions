@@ -35,7 +35,15 @@ Also there are far too many packages definied in a multi-definition file
 Get json list of all packages for a nix revision
 
     $GIT_HASH=98d8e1a160d3138e9ef3a51f727b04315ab9e285
-    nix-env -qaP --json -f https://github.com/NixOS/nixpkgs/archive/$GIT_HASH.tar.gz --arg config 'import ./packages-config.nix'
+    nix-env -qaP --json -f https://github.com/NixOS/nixpkgs-channels/archive/$GIT_HASH.tar.gz --arg config 'import ./packages-config.nix'
+
+# Install a package from a revision number
+
+    nix-env -qaP ghc -f https://github.com/NixOS/nixpkgs-channels/archive/03f76c136de2a907923ec66a91b79e058a2aad7d.tar.gz
+
+# Try it in nix-shell
+
+    nix-shell -p bat -I nixpkgs=https://github.com/nixos/nixpkgs-channels/archive/6ea7b48c2b20ab88334cea9b368fe0d0354b4926.tar.gz
 
 ## Statistics about Nix
 

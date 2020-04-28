@@ -13,7 +13,7 @@ import Data.Maybe (fromMaybe, fromJust)
 import Data.String (fromString, IsString)
 import Data.Text.Encoding (decodeUtf8)
 import Data.Text (Text)
-import Data.Time.Calendar (Day)
+import Data.Time.Calendar (Day, showGregorian)
 import Network.HTTP.Types (status200, status404, renderQuery, queryTextToQuery)
 import Network.Wai (Application, Request, Response, responseLBS, rawPathInfo, queryString)
 import Nix.Revision (Package(..), Channel(..), GitBranch(..), channelBranch)
@@ -95,7 +95,7 @@ pageHome conn request = do
                             ! A.class_ "pure-button pure-button-primary"
             createResults mPackages
 
-            fromMaybe genericInstallationInstructions
+            fromMaybe mempty
                 $ installationInstructions <$> mSearchedPackage <*> mSelectedChannel <*> mSelectedRevision
 
             H.footer $ H.p
@@ -137,20 +137,21 @@ pageHome conn request = do
         createResults Nothing = mempty
         createResults (Just (channel, name, results)) =
             H.table
-                ! A.class_ "mq-table pure-table-bordered pure-table"
+                ! A.class_ "pure-table-bordered pure-table"
                 ! A.style "width: 100%"
                 $ do
                 H.thead $ H.tr do
-                    H.th "Attribute Name"
+                    H.th "Package"
                     H.th "Version"
                     H.th "Revision"
+                    H.th "Date"
                 H.tbody $
                     if null results
                        then H.p "No results found"
                        else mapM_ (toRow channel name) $ zip [0..] results
 
         toRow :: Channel -> Name -> (Int, (Package, Hash, Day)) -> H.Html
-        toRow channel name (ix, (Package _ (Version v) _, hash, _)) =
+        toRow channel name (ix, (Package _ (Version v) _, hash, day)) =
             H.tr
                 ! (if odd ix then A.class_ "pure-table-odd" else mempty)
                 $ do
@@ -158,7 +159,9 @@ pageHome conn request = do
                 H.td $ H.text v
                 H.td $ H.a
                     ! A.href (toValue $ revisionLink channel name hash)
+                    ! A.title "Click for installation instructions"
                     $ H.text $ fromHash hash
+                H.td $ toMarkup $ showGregorian day
 
         revisionLink :: Channel -> Name -> Hash -> Text.Text
         revisionLink  channel (Name name) (Hash hash) =
@@ -174,43 +177,49 @@ pageHome conn request = do
                         ]
 
         installationInstructions :: Name -> Channel -> Hash -> H.Html
-        installationInstructions (Name name) channel (Hash hash) =
+        installationInstructions (Name name) channel hash =
             H.div
                 ! A.id instructionsAnchor
                 $ do
                 H.h2 $ toMarkup $ "Install " <> name
-                H.p $ toMarkup $ Text.unwords ["Instuctions to install", name, "from", toChannelBranch channel, "channel, revision ", hash]
-                S.formatHtmlBlock S.defaultFormatOpts
-                    $ fromRight []
-                    $ S.tokenize (S.TokenizerConfig S.defaultSyntaxMap False) nixSyntax
-                    $ Text.unlines
-                        [ "import (builtins.fetchGit {                                                     "
-                        , "    # Descriptive name to make the store path easier to identify                "
-                        , "    name = \"my-old-revision\";                                                 "
-                        , "    url = \"https://github.com/nixos/nixpkgs-channels/\";                       "
-                        , "    ref = \"refs/heads/" <> toChannelBranch channel <> "\";                       "
-                        , "    rev = \""<> hash <> "\";                                                    "
-                        , "}) {}                                                                           "
+                H.table ! A.class_ "pure-table" $ do
+                    H.tr do
+                        H.th "Package"
+                        H.td $ toMarkup name
+                    H.tr do
+                        H.th "Channel"
+                        H.td $ toMarkup $ toChannelBranch channel
+                    H.tr do
+                        H.th "Revision"
+                        H.td $ toMarkup $ fromHash hash
+
+                H.p $ "Install " <> H.code (toMarkup name) <> " with " <> H.code "nix-env" <> "."
+                nixCodeBlock $ "nix-env -qaP ghc -f " <> revisionURL hash
+
+                H.p $ "Use " <> H.code (toMarkup name) <> " in a " <> H.code "nix-shell" <> "."
+                nixCodeBlock $ "nix-shell -p bat -I nixpkgs=" <> revisionURL hash
+
+                H.p $ "Use " <> H.code (toMarkup name) <> " in a nix script"
+                nixCodeBlock $ Text.unlines
+                        [ "let"
+                        , "     pkgs = import (builtins.fetchGit {"
+                        , "         # Descriptive name to make the store path easier to identify                "
+                        , "         name = \"my-old-revision\";                                                 "
+                        , "         url = \"https://github.com/nixos/nixpkgs-channels/\";                       "
+                        , "         ref = \"refs/heads/" <> toChannelBranch channel <> "\";                     "
+                        , "         rev = \""<> fromHash hash <> "\";                                           "
+                        , "     }) {};                                                                           "
+                        , ""
+                        , "     myPkg = pkgs." <> name
+                        , "in"
+                        , "..."
                         ]
 
-        genericInstallationInstructions :: H.Html
-        genericInstallationInstructions = do
-            H.h2 "Downloading older package versions"
-            S.formatHtmlBlock S.defaultFormatOpts
-                $ fromRight []
-                $ S.tokenize (S.TokenizerConfig S.defaultSyntaxMap False) nixSyntax
-                $ Text.unlines
-                    [ "import (builtins.fetchGit {                                                     "
-                    , "    # Descriptive name to make the store path easier to identify                "
-                    , "    name = \"my-old-revision\";                                       "
-                    , "    url = \"https://github.com/nixos/nixpkgs-channels/\";                       "
-                    , "    # Replace <channel> with the name of the channel you are using              "
-                    , "    ref = \"refs/heads/<channel>\";                                             "
-                    , "    # Replace with the revision hash you want                                   "
-                    , "    rev = \"ca2ba44cab47767c8127d1c8633e2b581644eb8f\";                         "
-                    , "}) {}                                                                           "
-                    ]
-
+        nixCodeBlock :: Text -> H.Html
+        nixCodeBlock
+            = S.formatHtmlBlock S.defaultFormatOpts
+            . fromRight []
+            . S.tokenize (S.TokenizerConfig S.defaultSyntaxMap False) nixSyntax
 
 pageNotFound :: Response
 pageNotFound = responseLBS
@@ -236,4 +245,6 @@ fromChannelBranch = flip lookup $ (toChannelBranch &&& id) <$> [minBound..]
 toChannelBranch :: Channel -> Text
 toChannelBranch = fromGitBranch . channelBranch
 
+revisionURL :: Hash -> Text
+revisionURL (Hash hash) = "https://github.com/NixOS/nixpkgs-channels/archive/" <> hash <> ".tar.gz"
 
