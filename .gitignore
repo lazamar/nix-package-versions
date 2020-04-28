@@ -7,3 +7,7 @@ saved-versions
 *.db
 tags
 .env
+
+
+# Annoying mac files
+.DS_Store
