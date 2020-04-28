@@ -53,6 +53,18 @@ pageHome conn request = do
     return $ responseLBS status200 [("Content-Type", "text/html")] $ renderHtml $
         H.docTypeHtml do
         H.head do
+            H.title "Nix Package Versions"
+            H.link
+                ! A.rel "shortcut icon"
+                ! A.href "https://nixos.wiki/xfavicon.png.pagespeed.ic.Yz0KSD8dq8.webp"
+            H.link
+                ! A.rel "icon"
+                ! A.type_ "image/webp"
+                ! A.href "https://nixos.wiki/xfavicon.png.pagespeed.ic.Yz0KSD8dq8.webp"
+            H.link
+                ! A.rel "apple-touch-icon"
+                ! A.type_ "image/webp"
+                ! A.href "https://nixos.wiki/xfavicon.png.pagespeed.ic.Yz0KSD8dq8.webp"
             H.link
                 ! A.rel "stylesheet"
                 ! A.href "https://unpkg.com/purecss@1.0.1/build/pure-min.css"
@@ -60,50 +72,67 @@ pageHome conn request = do
                 ! A.name "viewport"
                 ! A.content "width=device-width, initial-scale=1"
             H.style do
-                "section { max-width: 768px; margin: auto }"
+                "body {                             "
+                "    margin: 0;                     "
+                "    min-height: 100vh;             "
+                "    display: flex;                 "
+                "    flex-flow: column;             "
+                "    align-content: space-between;  "
+                "}                                  "
+                "section { max-width: 768px; margin: 0 auto auto; padding: 1em }"
                 fromString $ S.styleToCss S.pygments
 
-        H.body $ H.section do
-            H.h1 "Nix package versions"
-            H.p  "Find all versions of a package that were available in a channel and the revision you can download it from."
-            H.form
-                ! A.action "."
-                ! A.method "GET"
-                ! A.class_ "pure-form pure-form-aligned"
-                $ do
-                H.fieldset $ do
-                    H.div ! A.class_ "pure-control-group" $ do
-                        H.label "Nix channel"
-                        selectBox
-                            channelKey
-                            toChannelBranch
-                            (fromMaybe Nixpkgs_unstable mSelectedChannel)
-                            [minBound..]
+        H.body $ do
+            H.section do
+                H.h1 "Nix package versions"
+                H.p  "Find all versions of a package that were available in a channel and the revision you can download it from."
+                H.p  "Click on the revision number for installation instructions."
+                H.form
+                    ! A.action "."
+                    ! A.method "GET"
+                    ! A.class_ "pure-form pure-form-aligned"
+                    $ do
+                    H.fieldset $ do
+                        H.div ! A.class_ "pure-control-group" $ do
+                            H.label "Nix channel"
+                            selectBox
+                                channelKey
+                                toChannelBranch
+                                (fromMaybe Nixpkgs_unstable mSelectedChannel)
+                                [minBound..]
 
-                    H.div ! A.class_ "pure-control-group" $ do
-                        H.label "Package name"
-                        H.input
-                            ! A.type_ "text"
-                            ! A.value (fromString $ Text.unpack $ maybe "" fromName mSearchedPackage)
-                            ! A.name (fromString pkgKey)
-                            ! A.placeholder "Package name"
+                        H.div ! A.class_ "pure-control-group" $ do
+                            H.label "Package name"
+                            H.input
+                                ! A.type_ "text"
+                                ! A.value (fromString $ Text.unpack $ maybe "" fromName mSearchedPackage)
+                                ! A.name (fromString pkgKey)
+                                ! A.placeholder "Package name"
 
-                    H.div ! A.class_ "pure-controls" $ do
-                        H.input
-                            ! A.type_ "submit"
-                            ! A.value "Search"
-                            ! A.class_ "pure-button pure-button-primary"
-            createResults mPackages
+                        H.div ! A.class_ "pure-controls" $ do
+                            H.input
+                                ! A.type_ "submit"
+                                ! A.value "Search"
+                                ! A.class_ "pure-button pure-button-primary"
+                createResults mPackages
 
-            fromMaybe mempty
-                $ installationInstructions <$> mSearchedPackage <*> mSelectedChannel <*> mSelectedRevision
+                fromMaybe mempty
+                    $ installationInstructions <$> mSearchedPackage <*> mSelectedChannel <*> mSelectedRevision
 
-            H.footer $ H.p
-                ! A.style "text-align: center"
-                $ do
+            H.footer
+                ! A.style (toValue $ unwords
+                    [ "text-align: center;"
+                    , "padding: 10px;"
+                    , "background-color: #f2f2f2;"
+                    , "font-size: .8em;"
+                    ])
+                $ H.p do
                 "Created by "
                 H.a ! A.href "http://lazamar.github.io/" $
                     "Marcelo Lazaroni"
+                ". Check it on "
+                H.a ! A.href "https://github.com/lazamar/nix-package-versions" $
+                    "GitHub"
 
 
     where
