@@ -122,6 +122,21 @@ pageHome conn request = do
                 fromMaybe mempty
                     $ installationInstructions <$> mSearchedPackage <*> mSelectedChannel <*> mSelectedRevision
 
+                H.h2 "Motivation and Method"
+                H.p do
+                    "Installing older versions of packages in Nix is easy but currently there is no official way to find out what "
+                    "revision has the package version that I need. This page provides this functionality by letting you see what "
+                    "versions were available in the past, when they were available, what revision to install them from, and what command to use."
+
+                H.p do
+                    "The list of versions available here is not exaustive. To check what versions of packages were ever available data "
+                    "was collected from past revisions in 5 weeks intervals. This means that if a package changed versions more often "
+                    "than every 5 weeks there may be versions missing."
+
+                H.p do
+                    "During the retrieval of version information, revisions for some periods could not be successfully built for "
+                    "some channels and this also causes versions to be missing from the list."
+
             H.footer
                 ! A.style (toValue $ unwords
                     [ "text-align: center;"
