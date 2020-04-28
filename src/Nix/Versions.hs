@@ -105,7 +105,7 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
 
                 Right revisions ->
                     -- We will try only a few revisions. If they don't succeed we give up on that revision.
-                    let maxAttempts = 20
+                    let maxAttempts = 40
                     in
                     tryInSequence (day, channel, "Unable to create dervation after " <> show maxAttempts <> " attempts.")
                         $ fmap (download conn day)
@@ -115,7 +115,7 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
 
         download conn day (tryCount, revision@(Revision channel commit)) = do
             mState <- DB.revisionState conn revision
-            let shouldDownload = maybe False isFinalState mState
+            let shouldDownload = maybe True (not . isFinalState) mState
             if not shouldDownload
                 then return $ Right $ msg "Skipped"
                 else do
@@ -217,4 +217,3 @@ threadMonitor ConcKey{..} = do
                then return ()
                else retry
         killThread loggerId
-    liftIO $ putStrLn "What?"
