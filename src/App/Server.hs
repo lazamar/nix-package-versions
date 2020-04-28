@@ -10,16 +10,18 @@ import Data.Either (fromRight)
 import Data.Foldable (traverse_)
 import Data.List (lookup)
 import Data.Maybe (fromMaybe, fromJust)
-import Data.String (fromString)
+import Data.String (fromString, IsString)
 import Data.Text.Encoding (decodeUtf8)
+import Data.Text (Text)
 import Data.Time.Calendar (Day)
-import Network.HTTP.Types (status200, status404)
+import Network.HTTP.Types (status200, status404, renderQuery, queryTextToQuery)
 import Network.Wai (Application, Request, Response, responseLBS, rawPathInfo, queryString)
 import Nix.Revision (Package(..), Channel(..), GitBranch(..), channelBranch)
 import Nix.Versions.Database (Connection)
 import Nix.Versions.Types (Hash(..), Version(..), Config(..), Name(..))
 import Text.Blaze.Html.Renderer.Utf8 (renderHtml)
 import Text.Blaze.Html5 ((!))
+import Text.Blaze (toValue, toMarkup)
 
 import qualified Network.Wai.Handler.Warp as Warp
 import qualified Text.Blaze.Html5 as H
@@ -93,6 +95,106 @@ pageHome conn request = do
                             ! A.class_ "pure-button pure-button-primary"
             createResults mPackages
 
+            fromMaybe genericInstallationInstructions
+                $ installationInstructions <$> mSearchedPackage <*> mSelectedChannel <*> mSelectedRevision
+
+            H.footer $ H.p
+                ! A.style "text-align: center"
+                $ do
+                "Created by "
+                H.a ! A.href "http://lazamar.github.io/" $
+                    "Marcelo Lazaroni"
+
+
+    where
+        nixSyntax :: S.Syntax
+        nixSyntax = fromJust $ S.lookupSyntax "nix" S.defaultSyntaxMap
+
+        pkgKey, channelKey, revisionKey, instructionsAnchor :: IsString a => a
+        pkgKey = "package"
+        channelKey = "channel"
+        revisionKey = "revision"
+        instructionsAnchor = "instructions"
+
+        getVersions (channel, name) = (channel, name,) <$> Persistent.versions conn channel name
+
+        mSelectedChannel = do
+            val <- queryValueFor channelKey
+            fromChannelBranch val
+
+        mSearchedPackage = Name <$> queryValueFor pkgKey
+
+        mSearched = (,) <$> mSelectedChannel <*> mSearchedPackage
+
+        mSelectedRevision = Hash <$> queryValueFor revisionKey
+
+        queryValueFor key
+            = fmap decodeUtf8
+            $ join
+            $ lookup (fromString key)
+            $ queryString request
+
+        createResults Nothing = mempty
+        createResults (Just (channel, name, results)) =
+            H.table
+                ! A.class_ "mq-table pure-table-bordered pure-table"
+                ! A.style "width: 100%"
+                $ do
+                H.thead $ H.tr do
+                    H.th "Attribute Name"
+                    H.th "Version"
+                    H.th "Revision"
+                H.tbody $
+                    if null results
+                       then H.p "No results found"
+                       else mapM_ (toRow channel name) $ zip [0..] results
+
+        toRow :: Channel -> Name -> (Int, (Package, Hash, Day)) -> H.Html
+        toRow channel name (ix, (Package _ (Version v) _, hash, _)) =
+            H.tr
+                ! (if odd ix then A.class_ "pure-table-odd" else mempty)
+                $ do
+                H.td $ H.text $ fromName name
+                H.td $ H.text v
+                H.td $ H.a
+                    ! A.href (toValue $ revisionLink channel name hash)
+                    $ H.text $ fromHash hash
+
+        revisionLink :: Channel -> Name -> Hash -> Text.Text
+        revisionLink  channel (Name name) (Hash hash) =
+            "./" <> query <> "#" <> instructionsAnchor
+            where
+                query
+                    = decodeUtf8
+                    $ renderQuery True
+                    $ queryTextToQuery
+                        [ (pkgKey, Just name)
+                        , (revisionKey, Just hash)
+                        , (channelKey, Just $ toChannelBranch channel)
+                        ]
+
+        installationInstructions :: Name -> Channel -> Hash -> H.Html
+        installationInstructions (Name name) channel (Hash hash) =
+            H.div
+                ! A.id instructionsAnchor
+                $ do
+                H.h2 $ toMarkup $ "Install " <> name
+                H.p $ toMarkup $ Text.unwords ["Instuctions to install", name, "from", toChannelBranch channel, "channel, revision ", hash]
+                S.formatHtmlBlock S.defaultFormatOpts
+                    $ fromRight []
+                    $ S.tokenize (S.TokenizerConfig S.defaultSyntaxMap False) nixSyntax
+                    $ Text.unlines
+                        [ "import (builtins.fetchGit {                                                     "
+                        , "    # Descriptive name to make the store path easier to identify                "
+                        , "    name = \"my-old-revision\";                                                 "
+                        , "    url = \"https://github.com/nixos/nixpkgs-channels/\";                       "
+                        , "    ref = \"refs/heads/" <> toChannelBranch channel <> "\";                       "
+                        , "    rev = \""<> hash <> "\";                                                    "
+                        , "}) {}                                                                           "
+                        ]
+
+        genericInstallationInstructions :: H.Html
+        genericInstallationInstructions = do
             H.h2 "Downloading older package versions"
             S.formatHtmlBlock S.defaultFormatOpts
                 $ fromRight []
@@ -109,61 +211,6 @@ pageHome conn request = do
                     , "}) {}                                                                           "
                     ]
 
-            H.p
-                ! A.style "text-align: center"
-                $ do
-                "Created by "
-                H.a ! A.href "http://lazamar.github.io/" $
-                    "Marcelo Lazaroni"
-
-
-    where
-        nixSyntax :: S.Syntax
-        nixSyntax = fromJust $ S.lookupSyntax "nix" S.defaultSyntaxMap
-
-        pkgKey = "package"
-
-        channelKey = "channel"
-
-        getVersions (channel, name) = (name,) <$> Persistent.versions conn channel name
-
-        mSelectedChannel = do
-            val <- queryValueFor channelKey
-            fromChannelBranch $ Text.unpack val
-
-        mSearchedPackage = Name <$> queryValueFor pkgKey
-
-        mSearched = (,) <$> mSelectedChannel <*> mSearchedPackage
-
-        queryValueFor key
-            = fmap decodeUtf8
-            $ join
-            $ lookup (fromString key)
-            $ queryString request
-
-        createResults Nothing                = mempty
-        createResults (Just (name, results)) =
-            H.table
-                ! A.class_ "mq-table pure-table-bordered pure-table"
-                ! A.style "width: 100%"
-                $ do
-                H.thead $ H.tr do
-                    H.th "Attribute Name"
-                    H.th "Version"
-                    H.th "Revision"
-                H.tbody $
-                    if null results
-                       then H.p "No results found"
-                       else mapM_ (toRow name) $ zip [0..] results
-
-        toRow :: Name -> (Int, (Package, Hash, Day)) -> H.Html
-        toRow (Name name) (ix, (Package _ (Version v) _, Hash hash, _)) =
-            H.tr
-                ! (if odd ix then A.class_ "pure-table-odd" else mempty)
-                $ do
-                H.td $ H.text name
-                H.td $ H.text v
-                H.td $ H.text hash
 
 pageNotFound :: Response
 pageNotFound = responseLBS
@@ -171,23 +218,22 @@ pageNotFound = responseLBS
     [("Content-Type", "text/plain")]
     "404 - Not Found"
 
-selectBox :: Eq a => String -> (a -> String) -> a -> [a] -> H.Html
+selectBox :: Eq a => Text -> (a -> Text) -> a -> [a] -> H.Html
 selectBox name toString selected options =
     H.select
-        ! A.name (fromString name)
+        ! A.name (toValue name)
         $ traverse_ toOption options
     where
         toOption value =
             H.option
                 ! (if value == selected then A.selected "true" else mempty)
-                ! A.value (fromString $ toString value)
-                $ fromString (toString value)
+                ! A.value (toValue $ toString value)
+                $ toMarkup (toString value)
 
-fromChannelBranch :: String -> Maybe Channel
+fromChannelBranch :: Text -> Maybe Channel
 fromChannelBranch = flip lookup $ (toChannelBranch &&& id) <$> [minBound..]
 
-toChannelBranch :: Channel -> String
-toChannelBranch = Text.unpack . fromGitBranch . channelBranch
-
+toChannelBranch :: Channel -> Text
+toChannelBranch = fromGitBranch . channelBranch
 
 
