@@ -79,12 +79,15 @@ pageHome conn request = do
                 "    flex-flow: column;             "
                 "    align-content: space-between;  "
                 "}                                  "
-                "section { max-width: 768px; margin: 0 auto auto; padding: 1em }"
+                "section { max-width: 1000px; margin: 0 auto auto; padding: 1em }"
                 fromString $ S.styleToCss S.pygments
 
         H.body $ do
             H.section do
-                H.h1 "Nix package versions"
+                H.h1 $ H.a
+                    ! A.href "."
+                    ! A.style "text-decoration: none; color: inherit"
+                    $ "Nix package versions"
                 H.p  "Find all versions of a package that were available in a channel and the revision you can download it from."
                 H.p  "Click on the revision number for installation instructions."
                 H.form
