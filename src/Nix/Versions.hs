@@ -11,8 +11,9 @@ module Nix.Versions
     ( savePackageVersionsForPeriod
     ) where
 
-import Control.Concurrent.Classy.Async (async, wait)
-import Control.Monad.Conc.Class (MonadConc, STM, atomically, getNumCapabilities, threadDelay, fork, killThread)
+import Control.Arrow ((&&&))
+import Control.Concurrent.Classy.Async (async, wait, race)
+import Control.Monad.Conc.Class (MonadConc, STM, atomically, getNumCapabilities, threadDelay)
 import Control.Monad.STM.Class (TVar, newTVar, readTVar, writeTVar, retry)
 import Control.Monad ((<=<), (>>), foldM, forever, void)
 import Control.Monad.Catch (MonadMask, finally)
@@ -30,6 +31,7 @@ import Nix.Versions.Types (Hash(..), Commit(..), Config(..))
 
 import qualified Nix.Versions.Database as DB
 import qualified Data.Set as Set
+import qualified Data.Map as Map
 
 -- | Download lists of packages and their versions
 -- for commits between 'to' and 'from' dates and save them to
@@ -53,16 +55,18 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
             $ filter (isWeekOfInterest . snd)
             $ toWeek <$> [from .. to]
 
-        -- TODO: Currently any week with a revision that reached the final state
-        -- is considered to be available. We want to change that so that a week
-        -- is available if it either:
-        --  - Has one Successful revision
-        --  - Has five unsuccessful revisions
         weeksAvailable :: [(Day, Revision, RevisionState)] -> Set (Year, Week)
         weeksAvailable
             = Set.fromList
-            . fmap (toWeek . revDate)
-            . filter (isFinalState . revState)
+            . fmap toWeek
+            . Map.keys
+            . Map.filter triesWereExhausted
+            . Map.fromListWith (\(c1, s1) (c2, s2) -> (c1 + c2, max s1 s2))
+            . fmap (revDate &&& ((1,) . revState))
+            where
+                triesWereExhausted (count, state) =
+                    count >= maxAttempts || state == Success
+
 
         -- | Reaching a final state means that it is not worth it trying to
         -- download that revision again.
@@ -90,6 +94,8 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
                     liftIO (print v)
                     return v
 
+        maxAttempts = 40
+
         downloadForDay conn channel day = do
             eRevisions <- revisionsOn gitUser channel day
             case eRevisions of
@@ -105,8 +111,6 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
 
                 Right revisions ->
                     -- We will try only a few revisions. If they don't succeed we give up on that revision.
-                    let maxAttempts = 40
-                    in
                     tryInSequence (day, channel, "Unable to create dervation after " <> show maxAttempts <> " attempts.")
                         $ fmap (download conn day)
                         $ take maxAttempts
@@ -115,10 +119,10 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
 
         download conn day (tryCount, revision@(Revision channel commit)) = do
             mState <- DB.revisionState conn revision
-            let shouldDownload = maybe True (not . isFinalState) mState
-            if not shouldDownload
-                then return $ Right $ msg "Skipped"
-                else do
+            case mState of
+                Just InvalidRevision -> return $ Left (day, channel, "Skipped InvalidRevision")
+                Just Success         -> return $ Right  $ msg "Skipped Success"
+                _ -> do
                     liftIO $ putStrLn $ msg $ "Attempt " <> show tryCount
                     DB.saveRevision conn day revision PreDownload
                     eRev <- build revision
@@ -167,9 +171,11 @@ isWeekOfInterest (Week week) = week `mod` 5 == 1
 ----------------------------------------------------------------------------------------------
 -- Concurrency
 
+limitedConcurrency _ = sequence -- TODO: Remove this or remove concurrency altogether
+
 -- | Run the maximum amount of concurrent computations possible, but no more than that.
-limitedConcurrency :: MonadConc m => ConcKey m -> [m a] -> m [a]
-limitedConcurrency ConcKey {maxConcurrency, activeThreads} actions = do
+temp_limitedConcurrency :: MonadConc m => ConcKey m -> [m a] -> m [a]
+temp_limitedConcurrency ConcKey {maxConcurrency, activeThreads} actions = do
     asyncs <- foldM runWhenPossible [] actions
     traverse wait asyncs
     where
@@ -203,17 +209,17 @@ newConcKey = do
 
 
 threadMonitor :: (MonadIO m, MonadConc m) => ConcKey m -> m ()
-threadMonitor ConcKey{..} = do
-    loggerId <- fork $ forever $ do
-        threadDelay 5000000
-        active <- atomically $ readTVar activeThreads
-        liftIO $ putStrLn $ "Active threads: " <> show active
+threadMonitor ConcKey{..} = void $ async $ race showActive ended
+    where
+        showActive = forever $ do
+            threadDelay 5000000
+            active <- atomically $ readTVar activeThreads
+            liftIO $ putStrLn $ "Active threads: " <> show active
 
-    void $ fork $ do
-        threadDelay 5000000
-        atomically $ do
-            active <- readTVar activeThreads
-            if active == 0
-               then return ()
-               else retry
-        killThread loggerId
+        ended = do
+            threadDelay 5000000
+            atomically $ do
+                active <- readTVar activeThreads
+                if active == 0
+                   then return ()
+                   else retry
