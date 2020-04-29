@@ -27,7 +27,6 @@ module Nix.Versions.Database
     ) where
 
 import Control.Monad.Conc.Class (MonadConc)
-import Control.Concurrent.Classy.Async (mapConcurrently_)
 import Control.Monad.Catch (MonadMask, bracket)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad (unless)
@@ -152,7 +151,7 @@ fromSQLRevision (SQLRevision day revision state) = (day, revision, state)
 saveRevisionWithPackages :: (MonadConc m, MonadIO m) => Connection -> Day -> Revision -> RevisionPackages -> m ()
 saveRevisionWithPackages conn represents revision packages = do
     saveRevision conn represents revision Incomplete
-    mapConcurrently_ persistPackage (HashMap.toList packages)
+    traverse persistPackage (HashMap.toList packages)
     saveRevision conn represents revision Success
     where
         persistPackage (name, package) =
@@ -189,12 +188,13 @@ saveVersion (Connection conn) name pkg@Package{version} (Revision channel (Commi
                 (SQLPackage name pkg channel hash represents)
 
 -- | Whether all revision entries were added to the table.
+-- Order is important. Success is the max value
 data RevisionState
-    = Success            -- ^ All revision packages were successfully added to the DB
+    = PreDownload        -- ^ We are still to start the download and handling of this state
     | Incomplete         -- ^ The process of adding packages to the DB was started but not finished
-    | PreDownload        -- ^ We are still to start the download and handling of this state
     | InvalidRevision    -- ^ This revision cannot be built. It is not worth trying again.
-    deriving (Show, Eq, Enum, Read)
+    | Success            -- ^ All revision packages were successfully added to the DB
+    deriving (Show, Eq, Enum, Read, Ord)
 
 
 -- | One row from db_REVISION_NEW
