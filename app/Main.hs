@@ -19,6 +19,7 @@ import Options.Applicative
     )
 import Data.Semigroup ((<>))
 import System.Exit (exitFailure)
+import System.IO (hSetBuffering, stdout, BufferMode(..))
 import App.Server (Port(..))
 
 import qualified App.Server as Server
@@ -45,6 +46,7 @@ main = do
     where
         downloadRevisions :: Day -> Day -> IO ()
         downloadRevisions from to = do
+            hSetBuffering stdout LineBuffering
             config <- getConfig
             runLoggerT (putStrLn . pretty) $ do
                 result <- V.savePackageVersionsForPeriod config from to
