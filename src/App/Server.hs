@@ -53,6 +53,7 @@ pageHome conn request = do
     return $ responseLBS status200 [("Content-Type", "text/html")] $ renderHtml $
         H.docTypeHtml do
         H.head do
+            analytics
             H.title "Nix Package Versions"
             H.link
                 ! A.rel "shortcut icon"
@@ -81,7 +82,6 @@ pageHome conn request = do
                 "}                                  "
                 "section { max-width: 1000px; margin: 0 auto auto; padding: 1em }"
                 fromString $ S.styleToCss S.pygments
-
         H.body $ do
             H.section do
                 H.h1 $ H.a
@@ -129,7 +129,7 @@ pageHome conn request = do
                     "versions were available in the past, when they were available, what revision to install them from, and what command to use."
 
                 H.p do
-                    "The list of versions available here is not exaustive. To check what versions of packages were ever available data "
+                    "The list of versions available here is not exhaustive. To check what versions of packages were ever available data "
                     "was collected from past revisions in 5 weeks intervals. This means that if a package changed versions more often "
                     "than every 5 weeks there may be versions missing."
 
@@ -294,4 +294,17 @@ toChannelBranch = fromGitBranch . channelBranch
 
 revisionURL :: Hash -> Text
 revisionURL (Hash hash) = "https://github.com/NixOS/nixpkgs-channels/archive/" <> hash <> ".tar.gz"
+
+analytics :: H.Html
+analytics = do
+    H.script
+        ! A.async "true"
+        ! A.src "https://www.googletagmanager.com/gtag/js?id=UA-68439335-6"
+        $ ""
+    H.script do
+        "window.dataLayer = window.dataLayer || []; "
+        "function gtag(){dataLayer.push(arguments);}"
+        "gtag('js', new Date());                    "
+        "gtag('config', 'UA-68439335-6');           "
+
 
