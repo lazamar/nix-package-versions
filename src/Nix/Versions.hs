@@ -67,15 +67,6 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
                 triesWereExhausted (count, state) =
                     count >= maxAttempts || state == Success
 
-
-        -- | Reaching a final state means that it is not worth it trying to
-        -- download that revision again.
-        isFinalState = \case
-            Success         -> True
-            InvalidRevision -> True
-            Incomplete      -> False
-            PreDownload     -> False
-
         revDate (day, _, _)  = day
         revState (_,_,state) = state
 
@@ -171,11 +162,9 @@ isWeekOfInterest (Week week) = week `mod` 5 == 1
 ----------------------------------------------------------------------------------------------
 -- Concurrency
 
-limitedConcurrency _ = sequence -- TODO: Remove this or remove concurrency altogether
-
 -- | Run the maximum amount of concurrent computations possible, but no more than that.
-temp_limitedConcurrency :: MonadConc m => ConcKey m -> [m a] -> m [a]
-temp_limitedConcurrency ConcKey {maxConcurrency, activeThreads} actions = do
+limitedConcurrency :: MonadConc m => ConcKey m -> [m a] -> m [a]
+limitedConcurrency ConcKey {maxConcurrency, activeThreads} actions = do
     asyncs <- foldM runWhenPossible [] actions
     traverse wait asyncs
     where

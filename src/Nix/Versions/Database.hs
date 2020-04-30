@@ -27,6 +27,7 @@ module Nix.Versions.Database
     ) where
 
 import Control.Monad.Conc.Class (MonadConc)
+import Control.Concurrent.Classy.Async (mapConcurrently_)
 import Control.Monad.Catch (MonadMask, bracket)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad (unless)
@@ -151,7 +152,7 @@ fromSQLRevision (SQLRevision day revision state) = (day, revision, state)
 saveRevisionWithPackages :: (MonadConc m, MonadIO m) => Connection -> Day -> Revision -> RevisionPackages -> m ()
 saveRevisionWithPackages conn represents revision packages = do
     saveRevision conn represents revision Incomplete
-    traverse persistPackage (HashMap.toList packages)
+    mapConcurrently_ persistPackage (HashMap.toList packages)
     saveRevision conn represents revision Success
     where
         persistPackage (name, package) =
@@ -168,7 +169,12 @@ saveRevision (Connection conn) represents revision state =
 -- | Save the version info of a package in the database
 saveVersion :: MonadIO m => Connection -> Name -> Package -> Revision -> Day -> m ()
 saveVersion (Connection conn) name pkg@Package{version} (Revision channel (Commit hash _)) represents =
-    liftIO $ SQL.withTransaction conn $ do
+    -- This should ideally happen inside of a transaction, but that causes more trouble
+    -- than it is woth. It causes errors with multi-threaded inserts, as it says that
+    -- we are trying to start a transaction inside another. It is unlikely that the same
+    -- package version for the same channel would be added in parallel, as we currently parallelise
+    -- version fetching by channel and even if it did happen the damage is minimal.
+    liftIO $ do
         pkgs <- SQL.queryNamed
             conn
             ("SELECT * FROM " <> db_PACKAGE_NEW <> " WHERE NAME = :name AND VERSION = :version AND CHANNEL = :channel")
