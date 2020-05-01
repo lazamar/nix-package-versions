@@ -82,3 +82,18 @@ Paths with most packages
 ("pkgs/misc/tmux-plugins/default.nix",25)
 ("pkgs/os-specific/linux/kernel/manual-config.nix",25)
 ("pkgs/applications/science/machine-learning/torch/torch-distro.nix",23)
+
+
+# Database performance investigation
+
+I removed revision a3962299f14944a0e9ccf8fd84bd7be524b74cd6 from a database of 1.1Gb and I'm running re-inserts to see what
+effect it is having.
+
+Inserting 42K records with my packages + revisions schema that does not require joins for searching I have:
+
+ - 53.01s saving to database when records are not there (no concurrency)
+ - 22.16s saving to database when records are there
+ - data not there with 5 threads one thread takes 53 seconds and all others take 22 seconds. Total of 145 seconds.
+ - data already there with 5 threads all take around 20 seconds. Total of 104 seconds.
+ - fresh database 47 seconds for insert and 18 seconds for noop inserts. Total 123 seconds.
+
