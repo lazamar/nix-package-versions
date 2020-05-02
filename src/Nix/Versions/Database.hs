@@ -60,6 +60,9 @@ connect (CachePath dir) (DBFile fname) = liftIO $ do
     -- Enable foreign key constraints.
     -- It's really weird that they would otherwise just not work.
     SQL.execute_ conn "PRAGMA foreign_keys = ON"
+    -- Make sure the correct transaction tracking option is in place
+    SQL.execute_ conn "PRAGMA journal_mode = WAL"
+    SQL.execute_ conn "PRAGMA synchronous = NORMAL"
     ensureTablesAreCreated conn
     return $ Connection conn
 
