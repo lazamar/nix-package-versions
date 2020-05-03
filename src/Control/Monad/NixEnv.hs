@@ -22,11 +22,10 @@ import Control.Monad.Conc.Class (MonadConc)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Trans.Reader (ReaderT, reader)
 import Control.Monad.Trans.Class (lift, MonadTrans)
-import Control.Monad.Trans.Except (runExcept,runExceptT, except, ExceptT(..))
+import Control.Monad.Trans.Except (runExceptT, ExceptT(..))
 import System.IO.Temp (emptyTempFile)
 
 import qualified Data.Map as Map
-import qualified Data.Aeson as Aeson
 
 -- | An error trying to build a revision
 data BuildError
@@ -42,6 +41,9 @@ type RevisionsT m = ReaderT (RevisionsState m) m
 
 class MonadRevisions m where
     withCommit :: Commit -> m (Either BuildError RevisionPackages)
+
+instance (MonadRevisions m, MonadTrans t, Monad m) => MonadRevisions (t m) where
+    withCommit = lift . withCommit
 
 instance (MonadConc m, MonadIO m) => MonadRevisions (RevisionsT m) where
      withCommit commit = do
