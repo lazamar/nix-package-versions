@@ -16,6 +16,7 @@ module Nix.Versions.Types
     , CachePath(..)
     , GitHubUser(..)
     , DBFile(..)
+    , Task(..)
     ) where
 
 import Data.Aeson (FromJSON, FromJSONKey, ToJSON, ToJSONKey)
@@ -72,3 +73,11 @@ data Repo = Repo FilePath
 
 data Commit = Commit Hash Day
     deriving (Show, Eq, Ord)
+
+
+-- | Asynchronous tasks
+data Task
+    = BuildNixRevision
+    | SaveToDatabase
+    deriving (Show, Eq, Ord)
+

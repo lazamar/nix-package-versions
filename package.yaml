@@ -52,6 +52,7 @@ dependencies:
 - transformers
 - optparse-applicative
 - skylighting
+- unliftio
 
 library:
   source-dirs: src
