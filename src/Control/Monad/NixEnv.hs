@@ -8,21 +8,24 @@
 module Control.Monad.NixEnv where
 
 {- A Monad to handle efficient download of RevisionPackages from Nixpkgs.
+
+Each commit will be downloaded at most once.
 -}
 
-import Data.Bifunctor (first)
-import Data.Text (Text, pack, unpack)
-import Nix.Versions.Types (Hash(..), Commit(..))
-import Nix.Revision (RevisionPackages, downloadNixVersionsTo, loadNixVersionsFrom)
-import Data.Map (Map)
-import Control.Monad (when, void)
-import Control.Concurrent.Classy.MVar (MVar(..), readMVar, modifyMVar)
 import Control.Concurrent.Classy.Async (async)
+import Control.Concurrent.Classy.MVar (MVar(..), readMVar, modifyMVar)
+import Control.Monad (when, void)
 import Control.Monad.Conc.Class (MonadConc)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Monad.Trans.Reader (ReaderT, reader)
+import Control.Monad.MonadLimitedConc (MonadLimitedConc)
 import Control.Monad.Trans.Class (lift, MonadTrans)
 import Control.Monad.Trans.Except (runExceptT, ExceptT(..))
+import Control.Monad.Trans.Reader (ReaderT, reader)
+import Data.Bifunctor (first)
+import Data.Map (Map)
+import Data.Text (Text, pack, unpack)
+import Nix.Revision (RevisionPackages, downloadNixVersionsTo, loadNixVersionsFrom)
+import Nix.Versions.Types (Hash(..), Commit(..))
 import System.IO.Temp (emptyTempFile)
 
 import qualified Data.Map as Map
@@ -34,19 +37,21 @@ data BuildError
 
 data RevisionsState m = RevisionsState
     { s_storageDir :: FilePath
+    -- | We keep only file paths in the cache because keeping the
+    -- packages themselves would use too much heap
     , s_commits :: MVar m (Map Commit (MVar m (Either BuildError FilePath)))
     }
 
 type RevisionsT m = ReaderT (RevisionsState m) m
 
 class MonadRevisions m where
-    withCommit :: Commit -> m (Either BuildError RevisionPackages)
+    packagesFor :: Commit -> m (Either BuildError RevisionPackages)
 
 instance (MonadRevisions m, MonadTrans t, Monad m) => MonadRevisions (t m) where
-    withCommit = lift . withCommit
+    packagesFor  = lift . packagesFor
 
 instance (MonadConc m, MonadIO m) => MonadRevisions (RevisionsT m) where
-     withCommit commit = do
+    packagesFor   commit = do
         mapVar <- reader s_commits
         (commitVar, isNew) <- modifyMVar mapVar $ \commitMap -> do
             commitVar <- maybe newEmptyMVar return $ Map.lookup commit commitMap
