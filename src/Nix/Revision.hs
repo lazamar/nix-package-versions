@@ -15,6 +15,8 @@
 
 module Nix.Revision
     ( build
+    , downloadNixVersionsTo
+    , loadNixVersionsFrom
     , revisionsOn
     , channelBranch
     , Revision(..)
@@ -88,21 +90,34 @@ instance FromJSON Package where
        <*>  v .:  "version"
        <*> (v .: "meta" >>= (.:? "position"))
 
--- | Download info for a revision and build a list of all
--- packages in it. This can take a few minutes.
+-- TODO REMOVE THIS
 build :: MonadIO m => Revision -> m (Either String RevisionPackages)
 build (Revision _ commit) =
-    liftIO $ withTempFile $ \filePath -> do
-        _ <- downloadNixVersionsTo filePath
-        handle exceptionToEither $ eitherDecodeFileStrict filePath
+    liftIO $ withTempFile $ \path -> do
+        mErr <- downloadNixVersionsTo path commit
+        case mErr of
+            Just err -> return $ Left err
+            Nothing -> loadNixVersionsFrom path
     where
         -- | Create a temporary file without holding a lock to it.
         withTempFile f = bracket (emptySystemTempFile "NIX_REVISION") removeLink f
 
+loadNixVersionsFrom :: MonadIO m => FilePath -> m (Either String RevisionPackages)
+loadNixVersionsFrom path = liftIO $ handle exceptionToEither $ eitherDecodeFileStrict path
+    where
         exceptionToEither (SomeException err) = return $ Left $ show err
 
-        downloadNixVersionsTo = run . shell . command
-
+-- | Download info for a revision and build a list of all
+-- packages in it. This can take a few minutes.
+downloadNixVersionsTo :: MonadIO m => FilePath -> Commit -> m (Maybe String)
+downloadNixVersionsTo filePath commit
+    = liftIO
+    $ fmap (either Just (const Nothing))
+    $ run
+    $ shell
+    $ command
+    $ filePath
+    where
         -- | download package versions as JSON and save
         -- them at destination
         command destination =
