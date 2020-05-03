@@ -12,20 +12,20 @@ module Control.Monad.NixEnv where
 Each commit will be downloaded at most once.
 -}
 
-import Control.Concurrent.Classy.MVar (MVar(..), readMVar, modifyMVar, putMVar, newEmptyMVar)
+import Control.Concurrent.Classy.MVar (MVar(..), readMVar, modifyMVar, putMVar, newEmptyMVar, newMVar)
 import Control.Monad (when, void)
 import Control.Monad.Conc.Class (MonadConc)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.MonadLimitedConc (MonadLimitedConc(..))
 import Control.Monad.Trans.Class (lift, MonadTrans)
 import Control.Monad.Trans.Except (runExceptT, ExceptT(..))
-import Control.Monad.Trans.Reader (ReaderT, ask)
+import Control.Monad.Trans.Reader (ReaderT, ask, runReaderT)
 import Data.Bifunctor (first)
 import Data.Map (Map)
 import Data.Text (Text, pack, unpack)
 import Nix.Revision (RevisionPackages, downloadNixVersionsTo, loadNixVersionsFrom)
 import Nix.Versions.Types (Hash(..), Commit(..), Task(..))
-import System.IO.Temp (emptyTempFile)
+import System.IO.Temp (emptyTempFile, withSystemTempDirectory)
 import UnliftIO (MonadUnliftIO)
 
 import qualified Data.Map as Map
@@ -50,6 +50,16 @@ class MonadRevisions m where
 
 instance (MonadRevisions m, MonadTrans t, Monad m) => MonadRevisions (t m) where
     packagesFor  = lift . packagesFor
+
+runMonadRevisions :: (MonadConc m, MonadIO m) => RevisionsT m a -> m a
+runMonadRevisions r = do
+    withSystemTempDirectory "NIX_VERSIONS" $ \dir -> do
+        commitsVar <- newMVar mempty
+        runReaderT r RevisionsState
+            { s_storageDir = dir
+            , s_commits = commitsVar
+            }
+
 
 instance (MonadUnliftIO m, MonadConc m, MonadIO m, MonadLimitedConc Task m) => MonadRevisions (RevisionsT m) where
     packagesFor commit = do

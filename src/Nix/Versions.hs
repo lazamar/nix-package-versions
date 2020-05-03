@@ -9,6 +9,7 @@
 
 module Nix.Versions
     ( savePackageVersionsForPeriod
+    , saveP
     ) where
 
 import Control.Arrow ((&&&))
@@ -18,8 +19,10 @@ import Control.Monad.STM.Class (TVar, newTVar, readTVar, writeTVar, retry)
 import Control.Monad ((<=<), (>>), foldM, forever, void)
 import Control.Monad.Catch (MonadMask, finally)
 import Control.Monad.Except (liftIO )
+import Control.Monad.Fail (MonadFail)
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Log (MonadLog, WithSeverity)
+import Data.Bifunctor (bimap)
 import Data.Hashable (Hashable)
 import Data.Set (Set)
 import Data.Text (pack)
@@ -33,6 +36,24 @@ import Control.Monad.NixEnv
 import qualified Nix.Versions.Database as DB
 import qualified Data.Set as Set
 import qualified Data.Map as Map
+
+
+saveP :: (MonadFail m, MonadIO m, MonadRevisions m) => Config -> Day -> m (Either String String)
+saveP (Config dbFile cacheDir gitUser) day = do
+    Right revisions <- revisionsOn gitUser Nixpkgs_unstable day
+
+    -- We will try only a few revisions. If they don't succeed we give up on that revision.
+    tryInSequence ("Unable to create dervation after " <> show maxAttempts <> " attempts.")
+        $ fmap download
+        $ take maxAttempts
+        $ revisions
+    where
+        download :: _ => Revision -> m (Either String String)
+        download (Revision _ commit) = bimap show (const "Success!") <$> packagesFor commit
+
+        maxAttempts = 10
+
+
 
 -- | Download lists of packages and their versions
 -- for commits between 'to' and 'from' dates and save them to
