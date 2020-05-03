@@ -14,12 +14,12 @@ This is useful because if we create too many threads that download things
 from Nix we will exhaust the computer's resources and crash.
 -}
 
-import Control.Monad.Trans.Reader (ReaderT, reader)
+import Control.Monad.Trans.Reader (ReaderT, reader, runReaderT)
 import Control.Monad.Trans.Class (MonadTrans, lift)
 import Control.Monad.Conc.Class (MonadConc, STM, atomically, ThreadId, fork)
 import Control.Monad.STM.Class (retry)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Concurrent.Classy.MVar (MVar, modifyMVar)
+import Control.Concurrent.Classy.MVar (MVar, modifyMVar, newMVar)
 import Control.Concurrent.Classy.STM.TVar (TVar, newTVar, readTVar, modifyTVar)
 import Data.Map (Map)
 import Data.Maybe (fromMaybe)
@@ -34,6 +34,11 @@ data ConcState m k = ConcState
     { conc_limits :: Map k Int
     , conc_used :: MVar m (Map k (TVar (STM m) Int))
     }
+
+runMonadLimitedConc :: (Ord k, MonadConc m) => Map k Int -> ReaderT (ConcState m k) m a -> m a
+runMonadLimitedConc limits r = do
+    usedMapVar <- newMVar mempty
+    runReaderT r ConcState { conc_limits = limits , conc_used = usedMapVar }
 
 instance
     ( MonadUnliftIO (t m)

@@ -34,6 +34,7 @@ import qualified Data.Map as Map
 data BuildError
     = BuildError Text
     | JsonDecodeError Text
+    deriving (Show, Eq)
 
 data RevisionsState m = RevisionsState
     { s_storageDir :: FilePath
