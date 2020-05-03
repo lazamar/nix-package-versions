@@ -28,6 +28,7 @@ import Data.Time.Calendar.WeekDate (toWeekDate, fromWeekDate)
 import Nix.Revision (Revision(..), Channel(..), build, revisionsOn)
 import Nix.Versions.Database (Connection, RevisionState(..))
 import Nix.Versions.Types (Hash(..), Commit(..), Config(..))
+import Control.Monad.NixEnv
 
 import qualified Nix.Versions.Database as DB
 import qualified Data.Set as Set
