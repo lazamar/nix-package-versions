@@ -2,10 +2,15 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module Control.Monad.NixEnv where
+module Control.Monad.Revisions
+    ( RevisionsT
+    , MonadRevisions
+    , packagesFor
+    , runMonadRevisions
+    )
+    where
 
 {- A Monad to handle efficient download of RevisionPackages from Nixpkgs.
 
@@ -16,7 +21,7 @@ import Control.Concurrent.Classy.MVar (MVar(..), readMVar, modifyMVar, putMVar, 
 import Control.Monad (when, void)
 import Control.Monad.Conc.Class (MonadConc)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Monad.MonadLimitedConc (MonadLimitedConc(..))
+import Control.Monad.LimitedConc (MonadLimitedConc(..))
 import Control.Monad.Trans.Class (lift, MonadTrans)
 import Control.Monad.Trans.Except (runExceptT, ExceptT(..))
 import Control.Monad.Trans.Reader (ReaderT, ask, runReaderT)
@@ -29,6 +34,24 @@ import System.IO.Temp (emptyTempFile, withSystemTempDirectory)
 import UnliftIO (MonadUnliftIO)
 
 import qualified Data.Map as Map
+
+-- | A monad that takes care of fetching packages for a commit from Nix
+-- at most once and limiting the amount of concurrent requests
+class MonadRevisions m where
+    packagesFor :: Commit -> m (Either BuildError RevisionPackages)
+
+-- | Pass through instance
+instance {-# OVERLAPPABLE #-} (MonadRevisions m, MonadTrans t, Monad m) => MonadRevisions (t m) where
+    packagesFor  = lift . packagesFor
+
+runMonadRevisions :: (MonadConc m, MonadIO m) => RevisionsT m a -> m a
+runMonadRevisions r = do
+    withSystemTempDirectory "NIX_VERSIONS" $ \dir -> do
+        commitsVar <- newMVar mempty
+        runReaderT r RevisionsState
+            { s_storageDir = dir
+            , s_commits = commitsVar
+            }
 
 -- | An error trying to build a revision
 data BuildError
@@ -44,22 +67,6 @@ data RevisionsState m = RevisionsState
     }
 
 type RevisionsT m = ReaderT (RevisionsState m) m
-
-class MonadRevisions m where
-    packagesFor :: Commit -> m (Either BuildError RevisionPackages)
-
-instance (MonadRevisions m, MonadTrans t, Monad m) => MonadRevisions (t m) where
-    packagesFor  = lift . packagesFor
-
-runMonadRevisions :: (MonadConc m, MonadIO m) => RevisionsT m a -> m a
-runMonadRevisions r = do
-    withSystemTempDirectory "NIX_VERSIONS" $ \dir -> do
-        commitsVar <- newMVar mempty
-        runReaderT r RevisionsState
-            { s_storageDir = dir
-            , s_commits = commitsVar
-            }
-
 
 instance (MonadUnliftIO m, MonadConc m, MonadIO m, MonadLimitedConc Task m) => MonadRevisions (RevisionsT m) where
     packagesFor commit = do

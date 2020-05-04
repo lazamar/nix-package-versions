@@ -6,7 +6,12 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module Control.Monad.MonadLimitedConc where
+module Control.Monad.LimitedConc
+    ( MonadLimitedConc
+    , LimitedConcT
+    , asyncTask
+    , runMonadLimitedConc
+    ) where
 
 {- | A Monad to limit the amount of concurrent threads for a given task
 
@@ -30,17 +35,8 @@ import qualified Data.Map as Map
 class MonadConc m => MonadLimitedConc k m | m -> k where
     asyncTask :: k -> m a -> m (ThreadId m)
 
-data ConcState m k = ConcState
-    { conc_limits :: Map k Int
-    , conc_used :: MVar m (Map k (TVar (STM m) Int))
-    }
-
-runMonadLimitedConc :: (Ord k, MonadConc m) => Map k Int -> ReaderT (ConcState m k) m a -> m a
-runMonadLimitedConc limits r = do
-    usedMapVar <- newMVar mempty
-    runReaderT r ConcState { conc_limits = limits , conc_used = usedMapVar }
-
-instance
+-- | Pass-through instance
+instance {-# OVERLAPPABLE #-}
     ( MonadUnliftIO (t m)
     , MonadConc (t m)
     , MonadIO m
@@ -52,7 +48,19 @@ instance
         u <- askUnliftIO
         lift $ asyncTask k $ liftIO $ unliftIO u $ action
 
-instance (Ord k, MonadConc m, MonadIO m) => MonadLimitedConc k (ReaderT (ConcState m k) m) where
+data ConcState m k = ConcState
+    { conc_limits :: Map k Int
+    , conc_used :: MVar m (Map k (TVar (STM m) Int))
+    }
+
+type LimitedConcT k m = ReaderT (ConcState m k) m
+
+runMonadLimitedConc :: (Ord k, MonadConc m) => Map k Int -> LimitedConcT k m a -> m a
+runMonadLimitedConc limits r = do
+    usedMapVar <- newMVar mempty
+    runReaderT r ConcState { conc_limits = limits , conc_used = usedMapVar }
+
+instance (Ord k, MonadConc m, MonadIO m) => MonadLimitedConc k (LimitedConcT k m) where
     asyncTask key task = fork $ do
         limits <- reader conc_limits
         let maxThreads = fromMaybe maxBound $ Map.lookup key limits
