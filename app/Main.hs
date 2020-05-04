@@ -10,9 +10,9 @@ module Main (main) where
 import Data.List (isPrefixOf)
 import Data.Time.Calendar (Day)
 import Text.Read (readMaybe)
-import Nix.Versions.Types (DBFile(..),GitHubUser(..), CachePath(..), Config(..), Task)
+import Nix.Versions.Types (DBFile(..),GitHubUser(..), CachePath(..), Config(..), Task(..))
 import Control.Monad (mapM_)
-import Control.Monad.Log2 (runLoggerT, pretty)
+import Control.Monad.Log2 (runLoggerT, inTerminal)
 import Control.Monad.Log (logInfo)
 import Options.Applicative
     (info, option, auto, str, helper, switch, help, metavar, fullDesc, progDesc
@@ -30,10 +30,12 @@ import qualified Data.ByteString.Char8 as B
 
 import Control.Monad.Revisions
 import Control.Monad.LimitedConc
+import Control.Concurrent.Classy.Async (mapConcurrently)
 
 
 main :: IO ()
 main = do
+    doTest
     CommandLineOptions{..} <- cliOptions
     if not cli_downloadVersions
         then runServer cli_port
@@ -47,13 +49,12 @@ main = do
                         ]
                     exitFailure
 
-    doTest
     where
         downloadRevisions :: Day -> Day -> IO ()
         downloadRevisions from to = do
             hSetBuffering stdout LineBuffering
             config <- getConfig
-            runLoggerT (putStrLn . pretty) $ do
+            runLoggerT inTerminal $ do
                 result <- V.savePackageVersionsForPeriod config from to
                 mapM_ (logInfo . show) result
 
@@ -62,9 +63,11 @@ main = do
 
         doTest = do
             config <- getConfig
-            runMonadLimitedConc (mempty :: Map.Map Task Int)
+
+            runLoggerT inTerminal
+                $ runMonadLimitedConc (Map.fromList [(BuildNixRevision, 3)])
                 $ runMonadRevisions
-                $ V.saveP config (read "2020-01-01")
+                $ mapConcurrently (V.saveP config) $ concat $ take 3 $ repeat $ take 5 $ [(read "2018-01-01")..]
             return ()
 
 -------------------------------------------------------------------------------------------
