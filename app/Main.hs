@@ -3,13 +3,14 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE PartialTypeSignatures #-}
 
 module Main (main) where
 
 import Data.List (isPrefixOf)
 import Data.Time.Calendar (Day)
 import Text.Read (readMaybe)
-import Nix.Versions.Types (DBFile(..),GitHubUser(..), CachePath(..), Config(..))
+import Nix.Versions.Types (DBFile(..),GitHubUser(..), CachePath(..), Config(..), Task)
 import Control.Monad (mapM_)
 import Control.Monad.Log2 (runLoggerT, pretty)
 import Control.Monad.Log (logInfo)
@@ -27,6 +28,9 @@ import qualified Data.Map as Map
 import qualified Nix.Versions as V
 import qualified Data.ByteString.Char8 as B
 
+import Control.Monad.Revisions
+import Control.Monad.LimitedConc
+
 
 main :: IO ()
 main = do
@@ -43,6 +47,7 @@ main = do
                         ]
                     exitFailure
 
+    doTest
     where
         downloadRevisions :: Day -> Day -> IO ()
         downloadRevisions from to = do
@@ -54,6 +59,13 @@ main = do
 
         runServer :: Port -> IO ()
         runServer port = Server.run port =<< getConfig
+
+        doTest = do
+            config <- getConfig
+            runMonadLimitedConc (mempty :: Map.Map Task Int)
+                $ runMonadRevisions
+                $ V.saveP config (read "2020-01-01")
+            return ()
 
 -------------------------------------------------------------------------------------------
 -- CLI
