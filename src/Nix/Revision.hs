@@ -26,8 +26,9 @@ module Nix.Revision
     , GitBranch(..)
     ) where
 
-import Control.Exception (SomeException(..), bracket, handle, tryJust)
+import Control.Monad.Catch (SomeException(..), bracket, handle, tryJust, MonadMask)
 import Control.Monad.IO.Class (MonadIO, liftIO)
+import Control.Monad.Log (MonadLog, WithSeverity, logDebug)
 import Data.Aeson (FromJSON, eitherDecodeFileStrict, parseJSON, withObject, (.:), (.:?), parseJSON)
 import Data.List (partition)
 import Data.HashMap.Strict (HashMap)
@@ -91,16 +92,20 @@ instance FromJSON Package where
        <*> (v .: "meta" >>= (.:? "position"))
 
 -- TODO REMOVE THIS
-build :: MonadIO m => Revision -> m (Either String RevisionPackages)
+build :: (MonadMask m, MonadIO m, MonadLog (WithSeverity String) m)
+    => Revision -> m (Either String RevisionPackages)
 build (Revision _ commit) =
-    liftIO $ withTempFile $ \path -> do
+    withTempFile $ \path -> do
         mErr <- downloadNixVersionsTo path commit
         case mErr of
             Just err -> return $ Left err
             Nothing -> loadNixVersionsFrom path
     where
         -- | Create a temporary file without holding a lock to it.
-        withTempFile f = bracket (emptySystemTempFile "NIX_REVISION") removeLink f
+        withTempFile f = bracket
+            (liftIO $ emptySystemTempFile "NIX_REVISION")
+            (liftIO . removeLink)
+            f
 
 loadNixVersionsFrom :: MonadIO m => FilePath -> m (Either String RevisionPackages)
 loadNixVersionsFrom path = liftIO $ handle exceptionToEither $ eitherDecodeFileStrict path
@@ -109,14 +114,18 @@ loadNixVersionsFrom path = liftIO $ handle exceptionToEither $ eitherDecodeFileS
 
 -- | Download info for a revision and build a list of all
 -- packages in it. This can take a few minutes.
-downloadNixVersionsTo :: MonadIO m => FilePath -> Commit -> m (Maybe String)
+downloadNixVersionsTo
+    :: (MonadIO m, MonadLog (WithSeverity String) m)
+    => FilePath -> Commit -> m (Maybe String)
 downloadNixVersionsTo filePath commit
-    = liftIO
-    $ fmap (either Just (const Nothing))
-    $ run
-    $ shell
-    $ command
-    $ filePath
+    = do
+        logDebug $ unwords ["Downloading Nix version for", show commit, "into", filePath]
+        liftIO
+            $ fmap (either Just (const Nothing))
+            $ run
+            $ shell
+            $ command
+            $ filePath
     where
         -- | download package versions as JSON and save
         -- them at destination

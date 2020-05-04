@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Control.Monad.Revisions
@@ -22,6 +23,7 @@ import Control.Monad (when, void)
 import Control.Monad.Conc.Class (MonadConc)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.LimitedConc (MonadLimitedConc(..))
+import Control.Monad.Log (MonadLog, WithSeverity)
 import Control.Monad.Trans.Class (lift, MonadTrans)
 import Control.Monad.Trans.Except (runExceptT, ExceptT(..))
 import Control.Monad.Trans.Reader (ReaderT, ask, runReaderT)
@@ -68,7 +70,13 @@ data RevisionsState m = RevisionsState
 
 type RevisionsT m = ReaderT (RevisionsState m) m
 
-instance (MonadUnliftIO m, MonadConc m, MonadIO m, MonadLimitedConc Task m) => MonadRevisions (RevisionsT m) where
+instance
+    ( MonadUnliftIO m
+    , MonadConc m
+    , MonadIO m
+    , MonadLimitedConc Task m
+    , MonadLog (WithSeverity String) m
+    ) => MonadRevisions (RevisionsT m) where
     packagesFor commit = do
         RevisionsState{s_commits, s_storageDir} <- ask
         (commitVar, isNew) <- modifyMVar s_commits $ \commitMap -> do
