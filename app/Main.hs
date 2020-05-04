@@ -64,10 +64,13 @@ main = do
         doTest = do
             config <- getConfig
 
+            let from = read "2018-01-01"
+                to = read "2020-01-01"
+
             runLoggerT inTerminal
                 $ runMonadLimitedConc (Map.fromList [(BuildNixRevision, 3)])
                 $ runMonadRevisions
-                $ mapConcurrently (V.saveP config) $ concat $ take 3 $ repeat $ take 5 $ [(read "2018-01-01")..]
+                $ V.saveP config from to
             return ()
 
 -------------------------------------------------------------------------------------------

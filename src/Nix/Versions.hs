@@ -13,7 +13,7 @@ module Nix.Versions
     ) where
 
 import Control.Arrow ((&&&))
-import Control.Concurrent.Classy.Async (async, wait, race)
+import Control.Concurrent.Classy.Async (async, wait, race, mapConcurrently, forConcurrently)
 import Control.Monad.Conc.Class (MonadConc, STM, atomically, getNumCapabilities, threadDelay)
 import Control.Monad.STM.Class (TVar, newTVar, readTVar, writeTVar, retry)
 import Control.Monad ((<=<), (>>), foldM, forever, void)
@@ -21,14 +21,16 @@ import Control.Monad.Catch (MonadMask, finally)
 import Control.Monad.Except (liftIO )
 import Control.Monad.Fail (MonadFail)
 import Control.Monad.IO.Class (MonadIO(..))
-import Control.Monad.Log (MonadLog, WithSeverity)
-import Data.Bifunctor (bimap)
+import Control.Monad.Log (MonadLog, WithSeverity, logDebug, logInfo)
+import Control.Monad.Trans.Except (ExceptT(..), runExceptT)
+import Data.Bifunctor (first)
+import Data.Functor ((<&>))
 import Data.Hashable (Hashable)
 import Data.Set (Set)
 import Data.Text (pack)
 import Data.Time.Calendar (Day, showGregorian)
 import Data.Time.Calendar.WeekDate (toWeekDate, fromWeekDate)
-import Nix.Revision (Revision(..), Channel(..), build, revisionsOn)
+import Nix.Revision (Revision(..), Channel(..), build, revisionsOn, RevisionPackages)
 import Nix.Versions.Database (Connection, RevisionState(..))
 import Nix.Versions.Types (Hash(..), Commit(..), Config(..))
 import Control.Monad.Revisions (MonadRevisions, packagesFor)
@@ -37,23 +39,75 @@ import qualified Nix.Versions.Database as DB
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 
-
-saveP :: (MonadFail m, MonadIO m, MonadRevisions m) => Config -> Day -> m (Either String String)
-saveP (Config dbFile cacheDir gitUser) day = do
-    Right revisions <- revisionsOn gitUser Nixpkgs_unstable day
-
-    -- We will try only a few revisions. If they don't succeed we give up on that revision.
-    tryInSequence ("Unable to create dervation after " <> show maxAttempts <> " attempts.")
-        $ fmap download
-        $ take maxAttempts
-        $ revisions
+saveP :: (MonadLog (WithSeverity String) m, MonadConc m, MonadFail m, MonadIO m, MonadRevisions m)
+    => Config -> Day -> Day -> m [Either String String]
+saveP (Config dbFile cacheDir gitUser) from to =
+    DB.withConnection cacheDir dbFile $ \conn -> do
+        daysToDownload <- forConcurrently [minBound..] $ \channel -> do
+            days <- daysNeededFor conn channel
+            return $ (channel,) <$> days
+        mapConcurrently (uncurry $ buildAndSaveDay conn) $ concat daysToDownload
     where
-        download :: _ => Revision -> m (Either String String)
-        download (Revision _ commit) = bimap show (const "Success!") <$> packagesFor commit
+        buildAndSaveDay :: _ => Connection -> Channel -> Day -> m (Either String String)
+        buildAndSaveDay conn channel day = runExceptT $ do
+            dayRevisions <- ExceptT $ revisionsOn gitUser channel day
+            -- We will try only a few revisions. If they don't succeed we give up on that revision.
+            ExceptT
+                $ tryInSequence logInfo (unwords ["Unable to create dervation for",  show channel, showGregorian day])
+                $ fmap (\r -> saveToDatabase conn day r =<< download r)
+                $ take maxAttempts
+                $ dayRevisions
+
+        download :: _ => Revision -> m (Either String RevisionPackages)
+        download (Revision _ commit) = first show <$> packagesFor commit
 
         maxAttempts = 10
 
+        daysNeededFor :: _ => Connection -> Channel -> m [Day]
+        daysNeededFor conn channel = do
+            dbRevisions <- DB.revisions conn channel
+            return
+                $ Set.toList
+                $ daysAsked `Set.difference` daysAvailable maxAttempts dbRevisions
 
+        daysAsked :: Set Day
+        daysAsked
+            = Set.fromList
+            $ map toMonday
+            $ filter (isWeekOfInterest . snd)
+            $ toWeek <$> [from .. to]
+
+        saveToDatabase :: _ => Connection -> Day -> Revision -> Either String RevisionPackages -> m (Either String String)
+        saveToDatabase conn day revision ePackages = do
+            case ePackages  of
+                Left err -> do
+                    logDebug $ msg $ "Saving invalid revision"
+                    DB.saveRevision conn day revision InvalidRevision
+                    return $ Left err
+                Right packages -> do
+                    logInfo $ msg "Saving successful Nix revision"
+                    DB.saveRevisionWithPackages conn day revision packages
+                    logInfo $ msg "Saved"
+                    return $ Right $ msg "Success"
+            where
+                Revision channel commit = revision
+                Commit hash _ = commit
+                padded = take 20 . (<> repeat ' ')
+                msg txt = unwords [padded txt, showGregorian day, show channel, show hash]
+
+daysAvailable :: Int -> [(Day, Revision, RevisionState)] -> Set Day
+daysAvailable maxAttempts
+    = Set.fromList
+    . fmap (toMonday . toWeek)
+    . Map.keys
+    . Map.filter triesWereExhausted
+    . Map.fromListWith (\(c1, s1) (c2, s2) -> (c1 + c2, max s1 s2))
+    . fmap (revDate &&& ((1,) . revState))
+    where
+        revState (_,_,s) = s
+        revDate  (d,_,_) = d
+        triesWereExhausted (count, state) =
+            count >= maxAttempts || state == Success
 
 -- | Download lists of packages and their versions
 -- for commits between 'to' and 'from' dates and save them to
@@ -98,7 +152,7 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
             -- TODO: Add log of what is being skipped
             -- One day per week of interest
             let daysNeeded
-                    = map toDay
+                    = map toMonday
                     $ Set.toList
                     $ weeksAsked `Set.difference` weeksAvailable revisions
             traverse (printAndReturn <=< downloadForDay conn channel) daysNeeded
@@ -124,7 +178,7 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
 
                 Right revisions ->
                     -- We will try only a few revisions. If they don't succeed we give up on that revision.
-                    tryInSequence (day, channel, "Unable to create dervation after " <> show maxAttempts <> " attempts.")
+                    tryInSequence' (day, channel, "Unable to create dervation after " <> show maxAttempts <> " attempts.")
                         $ fmap (download conn day)
                         $ take maxAttempts
                         $ zip ([1..] :: [Int])
@@ -166,14 +220,22 @@ toWeek day = (Year year, Week week)
         (year,week,_) = toWeekDate day
 
 -- | Returns the Monday from that week
-toDay :: (Year, Week) -> Day
-toDay (Year year, Week week) = fromWeekDate year week 1
+toMonday :: (Year, Week) -> Day
+toMonday (Year year, Week week) = fromWeekDate year week 1
 
-tryInSequence :: (Show e, MonadIO m) => e -> [m (Either e a)] -> m (Either String a)
-tryInSequence err l = go (0 :: Int) l
+tryInSequence' :: (Show e, MonadIO m) => e -> [m (Either e a)] -> m (Either String a)
+tryInSequence' err l = go (0 :: Int) l
     where
         go n [] = return $ Left $ "Failed after " <> show n <> " attempts with: " <> show err
         go n (x:xs) = x >>= either (\e -> liftIO (print e) >> go (n + 1) xs) (return . Right)
+
+tryInSequence :: Monad m => (e' -> m ()) -> e -> [m (Either e' b)] -> m (Either e b)
+tryInSequence onError err values =
+    case values of
+        []      -> return $ Left err
+        (x:xs)  -> x >>= \case
+            Right result -> return $ Right result
+            Left e       -> onError e >> tryInSequence onError err xs
 
 
 -- | We are not interested in every week of the year.
