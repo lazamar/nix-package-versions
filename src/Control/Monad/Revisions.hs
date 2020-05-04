@@ -73,7 +73,7 @@ instance (MonadUnliftIO m, MonadConc m, MonadIO m, MonadLimitedConc Task m) => M
         RevisionsState{s_commits, s_storageDir} <- ask
         (commitVar, isNew) <- modifyMVar s_commits $ \commitMap -> do
             commitVar <- maybe newEmptyMVar return $ Map.lookup commit commitMap
-            return (Map.insert commit commitVar commitMap, (commitVar, Map.member commit commitMap))
+            return (Map.insert commit commitVar commitMap, (commitVar, not $ Map.member commit commitMap))
 
         when isNew $ void $ asyncTask BuildNixRevision $ do
             path <- liftIO $ emptyTempFile s_storageDir (unpack $ fromHash hash)
