@@ -30,12 +30,9 @@ import qualified Data.ByteString.Char8 as B
 
 import Control.Monad.Revisions
 import Control.Monad.LimitedConc
-import Control.Concurrent.Classy.Async (mapConcurrently)
-
 
 main :: IO ()
 main = do
-    doTest
     CommandLineOptions{..} <- cliOptions
     if not cli_downloadVersions
         then runServer cli_port
@@ -50,28 +47,21 @@ main = do
                     exitFailure
 
     where
+        -- | Run our monad stack
+        run = runLoggerT inTerminal
+            . runMonadLimitedConc (Map.fromList [(BuildNixRevision, 3), (SaveToDatabase, 1)])
+            . runMonadRevisions
+
         downloadRevisions :: Day -> Day -> IO ()
         downloadRevisions from to = do
             hSetBuffering stdout LineBuffering
             config <- getConfig
-            runLoggerT inTerminal $ do
+            run $ do
                 result <- V.savePackageVersionsForPeriod config from to
                 mapM_ (logInfo . show) result
 
         runServer :: Port -> IO ()
         runServer port = Server.run port =<< getConfig
-
-        doTest = do
-            config <- getConfig
-
-            let from = read "2018-01-01"
-                to = read "2018-05-01"
-
-            runLoggerT inTerminal
-                $ runMonadLimitedConc (Map.fromList [(BuildNixRevision, 3), (SaveToDatabase, 1)])
-                $ runMonadRevisions
-                $ V.saveP config from to
-            return ()
 
 -------------------------------------------------------------------------------------------
 -- CLI
