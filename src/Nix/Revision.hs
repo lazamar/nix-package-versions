@@ -14,9 +14,8 @@
 -}
 
 module Nix.Revision
-    ( build
-    , downloadNixVersionsTo
-    , loadNixVersionsFrom
+    ( downloadTo
+    , loadFrom
     , revisionsOn
     , channelBranch
     , Revision(..)
@@ -26,7 +25,7 @@ module Nix.Revision
     , GitBranch(..)
     ) where
 
-import Control.Monad.Catch (SomeException(..), bracket, handle, tryJust, MonadMask)
+import Control.Monad.Catch (SomeException(..), handle, tryJust)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Log (MonadLog, WithSeverity, logDebug)
 import Data.Aeson (FromJSON, eitherDecodeFileStrict, parseJSON, withObject, (.:), (.:?), parseJSON)
@@ -38,8 +37,6 @@ import Data.Time.Calendar (Day, showGregorian)
 import GHC.Generics (Generic)
 import Nix.Versions.Types (GitHubUser(..), Hash(..), Name(..), Version(..), Commit(..))
 import System.Exit (ExitCode(..))
-import System.IO.Temp (emptySystemTempFile)
-import System.Posix.Files (removeLink)
 import System.Process (readCreateProcessWithExitCode, shell, CreateProcess(..))
 
 import qualified Network.HTTP.Req as Req
@@ -94,33 +91,17 @@ instance FromJSON Package where
        <*>  v .:  "version"
        <*> (v .: "meta" >>= (.:? "position"))
 
--- TODO REMOVE THIS
-build :: (MonadMask m, MonadIO m, MonadLog (WithSeverity String) m)
-    => Revision -> m (Either String RevisionPackages)
-build (Revision _ commit) =
-    withTempFile $ \path -> do
-        mErr <- downloadNixVersionsTo path commit
-        case mErr of
-            Just err -> return $ Left err
-            Nothing -> loadNixVersionsFrom path
-    where
-        -- | Create a temporary file without holding a lock to it.
-        withTempFile f = bracket
-            (liftIO $ emptySystemTempFile "NIX_REVISION")
-            (liftIO . removeLink)
-            f
-
-loadNixVersionsFrom :: MonadIO m => FilePath -> m (Either String RevisionPackages)
-loadNixVersionsFrom path = liftIO $ handle exceptionToEither $ eitherDecodeFileStrict path
+loadFrom :: MonadIO m => FilePath -> m (Either String RevisionPackages)
+loadFrom path = liftIO $ handle exceptionToEither $ eitherDecodeFileStrict path
     where
         exceptionToEither (SomeException err) = return $ Left $ show err
 
 -- | Download info for a revision and build a list of all
 -- packages in it. This can take a few minutes.
-downloadNixVersionsTo
+downloadTo
     :: (MonadIO m, MonadLog (WithSeverity String) m)
     => FilePath -> Commit -> m (Maybe String)
-downloadNixVersionsTo filePath commit
+downloadTo filePath commit
     = do
         logDebug $ unwords ["Downloading Nix version for", show commit, "into", filePath]
         res <- liftIO
