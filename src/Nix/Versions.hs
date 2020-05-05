@@ -15,6 +15,7 @@ module Nix.Versions
 import Control.Arrow ((&&&))
 import Control.Concurrent.Classy.Async (async, wait, race, mapConcurrently, forConcurrently)
 import Control.Monad.Conc.Class (MonadConc, STM, atomically, getNumCapabilities, threadDelay)
+import Control.Monad.LimitedConc (runTask, MonadLimitedConc)
 import Control.Monad.STM.Class (TVar, newTVar, readTVar, writeTVar, retry)
 import Control.Monad ((<=<), (>>), foldM, forever, void)
 import Control.Monad.Catch (MonadMask, finally)
@@ -24,7 +25,6 @@ import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Log (MonadLog, WithSeverity, logDebug, logInfo)
 import Control.Monad.Trans.Except (ExceptT(..), runExceptT)
 import Data.Bifunctor (first)
-import Data.Functor ((<&>))
 import Data.Hashable (Hashable)
 import Data.Set (Set)
 import Data.Text (pack)
@@ -32,14 +32,21 @@ import Data.Time.Calendar (Day, showGregorian)
 import Data.Time.Calendar.WeekDate (toWeekDate, fromWeekDate)
 import Nix.Revision (Revision(..), Channel(..), build, revisionsOn, RevisionPackages)
 import Nix.Versions.Database (Connection, RevisionState(..))
-import Nix.Versions.Types (Hash(..), Commit(..), Config(..))
+import Nix.Versions.Types (Hash(..), Commit(..), Config(..), Task(..))
 import Control.Monad.Revisions (MonadRevisions, packagesFor)
 
 import qualified Nix.Versions.Database as DB
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 
-saveP :: (MonadLog (WithSeverity String) m, MonadConc m, MonadFail m, MonadIO m, MonadRevisions m)
+saveP ::
+    ( MonadLog (WithSeverity String) m
+    , MonadLimitedConc Task m
+    , MonadConc m
+    , MonadFail m
+    , MonadIO m
+    , MonadRevisions m
+    )
     => Config -> Day -> Day -> m [Either String String]
 saveP (Config dbFile cacheDir gitUser) from to =
     DB.withConnection cacheDir dbFile $ \conn -> do
@@ -78,7 +85,7 @@ saveP (Config dbFile cacheDir gitUser) from to =
             $ toWeek <$> [from .. to]
 
         saveToDatabase :: _ => Connection -> Day -> Revision -> Either String RevisionPackages -> m (Either String String)
-        saveToDatabase conn day revision ePackages = do
+        saveToDatabase conn day revision ePackages = runTask SaveToDatabase $ do
             case ePackages  of
                 Left err -> do
                     logDebug $ msg $ "Saving invalid revision"
