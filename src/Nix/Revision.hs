@@ -120,12 +120,17 @@ downloadNixVersionsTo
 downloadNixVersionsTo filePath commit
     = do
         logDebug $ unwords ["Downloading Nix version for", show commit, "into", filePath]
-        liftIO
+        res <- liftIO
             $ fmap (either Just (const Nothing))
             $ run
             $ shell
             $ command
             $ filePath
+        case res of
+            Just _  -> logDebug $ unwords ["Download successful for", show commit, "into", filePath]
+            Nothing -> logDebug $ unwords ["Download failed for", show commit, "into", filePath]
+        return res
+
     where
         -- | download package versions as JSON and save
         -- them at destination

@@ -65,10 +65,10 @@ main = do
             config <- getConfig
 
             let from = read "2018-01-01"
-                to = read "2020-01-01"
+                to = read "2018-05-01"
 
             runLoggerT inTerminal
-                $ runMonadLimitedConc (Map.fromList [(BuildNixRevision, 3)])
+                $ runMonadLimitedConc (Map.fromList [(BuildNixRevision, 3), (SaveToDatabase, 1)])
                 $ runMonadRevisions
                 $ V.saveP config from to
             return ()

@@ -23,7 +23,6 @@ import Control.Monad.Except (liftIO )
 import Control.Monad.Fail (MonadFail)
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Log (MonadLog, WithSeverity, logDebug, logInfo)
-import Control.Monad.Trans.Except (ExceptT(..), runExceptT)
 import Data.Bifunctor (first)
 import Data.Hashable (Hashable)
 import Data.Set (Set)
@@ -53,17 +52,19 @@ saveP (Config dbFile cacheDir gitUser) from to =
         daysToDownload <- forConcurrently [minBound..] $ \channel -> do
             days <- daysNeededFor conn channel
             return $ (channel,) <$> days
-        mapConcurrently (uncurry $ buildAndSaveDay conn) $ concat daysToDownload
+        results <- mapConcurrently (uncurry $ buildAndSaveDay conn) $ concat daysToDownload
+        return $ concat results
     where
-        buildAndSaveDay :: _ => Connection -> Channel -> Day -> m (Either String String)
-        buildAndSaveDay conn channel day = runExceptT $ do
-            dayRevisions <- ExceptT $ revisionsOn gitUser channel day
-            -- We will try only a few revisions. If they don't succeed we give up on that revision.
-            ExceptT
-                $ tryInSequence logInfo (unwords ["Unable to create dervation for",  show channel, showGregorian day])
-                $ fmap (\r -> saveToDatabase conn day r =<< download r)
-                $ take maxAttempts
-                $ dayRevisions
+        buildAndSaveDay :: _ => Connection -> Channel -> Day -> m [Either String String]
+        buildAndSaveDay conn channel day = do
+            revisionsOn gitUser channel day >>= \case
+                Left err -> return $ [Left err]
+                Right dayRevisions ->
+                    -- We will try only a few revisions. If they don't succeed we give up on that revision.
+                    tryInSequence
+                        $ fmap (\r -> saveToDatabase conn day r =<< download r)
+                        $ take maxAttempts
+                        $ dayRevisions
 
         download :: _ => Revision -> m (Either String RevisionPackages)
         download (Revision _ commit) = first show <$> packagesFor commit
@@ -88,11 +89,11 @@ saveP (Config dbFile cacheDir gitUser) from to =
         saveToDatabase conn day revision ePackages = runTask SaveToDatabase $ do
             case ePackages  of
                 Left err -> do
-                    logDebug $ msg $ "Saving invalid revision"
+                    logDebug $ msg $ "Saving invalid"
                     DB.saveRevision conn day revision InvalidRevision
                     return $ Left err
                 Right packages -> do
-                    logInfo $ msg "Saving successful Nix revision"
+                    logInfo $ msg "Saving successful"
                     DB.saveRevisionWithPackages conn day revision packages
                     logInfo $ msg "Saved"
                     return $ Right $ msg "Success"
@@ -236,13 +237,14 @@ tryInSequence' err l = go (0 :: Int) l
         go n [] = return $ Left $ "Failed after " <> show n <> " attempts with: " <> show err
         go n (x:xs) = x >>= either (\e -> liftIO (print e) >> go (n + 1) xs) (return . Right)
 
-tryInSequence :: Monad m => (e' -> m ()) -> e -> [m (Either e' b)] -> m (Either e b)
-tryInSequence onError err values =
-    case values of
-        []      -> return $ Left err
-        (x:xs)  -> x >>= \case
-            Right result -> return $ Right result
-            Left e       -> onError e >> tryInSequence onError err xs
+-- | Stops at first right
+tryInSequence :: Monad m => [m (Either a b)] -> m [Either a b]
+tryInSequence values = go [] values
+    where
+        go acc []     = return acc
+        go acc (x:xs) = x >>= \case
+            Right result -> return $ (Right result):acc
+            Left e       -> go (Left e:acc) xs
 
 
 -- | We are not interested in every week of the year.
