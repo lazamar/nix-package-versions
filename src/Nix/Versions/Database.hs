@@ -42,10 +42,7 @@ import Database.SQLite.Simple.ToField (ToField(..))
 import Nix.Revision (Channel, Revision(..), RevisionPackages, Package(..))
 import Nix.Versions.Types (CachePath(..), DBFile(..), Hash(..), Version(..), Name(..), Commit(..))
 
-import qualified Data.HashMap.Strict as HashMap
 import qualified Database.SQLite.Simple as SQL
-
-import System.TimeIt
 
 newtype Connection = Connection SQL.Connection
 
@@ -108,7 +105,7 @@ withConnection cache file = bracket (connect cache file) disconnect
 -- hundreds, so it is fine to just return all of them
 versions :: MonadIO m => Connection -> Channel -> Name -> m [(Package, Hash, Day)]
 versions (Connection conn) channel name = liftIO $ do
-    results <- timeItNamed "SQL query" $ SQL.queryNamed
+    results <- SQL.queryNamed
         conn
         (fromString $ unwords
             [ "SELECT *"
@@ -160,11 +157,11 @@ fromSQLRevision (SQLRevision day revision state) = (day, revision, state)
 saveRevisionWithPackages :: (MonadConc m, MonadIO m) => Connection -> Day -> Revision -> RevisionPackages -> m ()
 saveRevisionWithPackages conn represents revision packages = do
     saveRevision conn represents revision Incomplete
-    mapConcurrently_ persistPackage (HashMap.toList packages)
+    mapConcurrently_ persistPackage packages
     saveRevision conn represents revision Success
     where
-        persistPackage (name, package) =
-            saveVersion conn name package revision represents
+        persistPackage package =
+            saveVersion conn package revision represents
 
 -- | When there is a problem building the revision this function allows us
 -- to record that in the database so that later we don't try to build it again
@@ -175,8 +172,8 @@ saveRevision (Connection conn) represents revision state =
             (SQLRevision represents revision state)
 
 -- | Save the version info of a package in the database
-saveVersion :: MonadIO m => Connection -> Name -> Package -> Revision -> Day -> m ()
-saveVersion (Connection conn) name pkg@Package{version} (Revision channel (Commit hash _)) represents =
+saveVersion :: MonadIO m => Connection -> Package -> Revision -> Day -> m ()
+saveVersion (Connection conn) pkg@Package{name, version} (Revision channel (Commit hash _)) represents =
     -- This should ideally happen inside of a transaction, but that causes more trouble
     -- than it is woth. It causes errors with multi-threaded inserts, as it says that
     -- we are trying to start a transaction inside another. It is unlikely that the same
