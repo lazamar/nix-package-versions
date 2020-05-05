@@ -45,6 +45,8 @@ import Nix.Versions.Types (CachePath(..), DBFile(..), Hash(..), Version(..), Nam
 import qualified Data.HashMap.Strict as HashMap
 import qualified Database.SQLite.Simple as SQL
 
+import System.TimeIt
+
 newtype Connection = Connection SQL.Connection
 
 -- Constants
@@ -89,6 +91,8 @@ ensureTablesAreCreated conn = do
                         <> ", FOREIGN KEY (CHANNEL, COMMIT_HASH, REPRESENTS_DATE) REFERENCES " <> db_REVISION_NEW <> " (CHANNEL, COMMIT_HASH, REPRESENTS_DATE)"
                         <> ")"
 
+    SQL.execute_ conn $ "CREATE INDEX IF NOT EXISTS NAME_NOCASE_INDEX on " <> db_PACKAGE_NEW <> " (NAME COLLATE NOCASE)"
+
 disconnect :: MonadIO m => Connection -> m ()
 disconnect (Connection conn) = liftIO $ SQL.close conn
 
@@ -103,13 +107,13 @@ withConnection cache file = bracket (connect cache file) disconnect
 -- hundreds, so it is fine to just return all of them
 versions :: MonadIO m => Connection -> Channel -> Name -> m [(Package, Hash, Day)]
 versions (Connection conn) channel name = liftIO $ do
-    results <- SQL.queryNamed
+    results <- timeItNamed "SQL query" $ SQL.queryNamed
         conn
         (fromString $ unwords
             [ "SELECT *"
             , "FROM"
             , db_PACKAGE_NEW
-            , "WHERE CHANNEL = :channel AND NAME = :name"
+            , "WHERE CHANNEL = :channel AND NAME = :name COLLATE NOCASE"
             ]
         )
         [ ":name"    := name
