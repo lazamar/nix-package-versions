@@ -22,7 +22,7 @@ import Control.Concurrent.Classy.MVar (MVar(..), readMVar, modifyMVar, putMVar, 
 import Control.Monad (when, void)
 import Control.Monad.Conc.Class (MonadConc)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Monad.LimitedConc (MonadLimitedConc(..))
+import Control.Monad.LimitedConc (MonadLimitedConc, asyncTask)
 import Control.Monad.Log (MonadLog, WithSeverity)
 import Control.Monad.Trans.Class (lift, MonadTrans)
 import Control.Monad.Trans.Except (runExceptT, ExceptT(..))
