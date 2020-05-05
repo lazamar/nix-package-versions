@@ -30,12 +30,13 @@ import Control.Monad.Catch (SomeException(..), bracket, handle, tryJust, MonadMa
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Log (MonadLog, WithSeverity, logDebug)
 import Data.Aeson (FromJSON, eitherDecodeFileStrict, parseJSON, withObject, (.:), (.:?), parseJSON)
+import Data.Functor ((<&>))
 import Data.List (partition)
 import Data.HashMap.Strict (HashMap)
 import Data.Text (unpack, Text)
 import Data.Time.Calendar (Day, showGregorian)
 import GHC.Generics (Generic)
-import Nix.Versions.Types (GitHubUser(..), Hash(..), Name, Version(..), Commit(..))
+import Nix.Versions.Types (GitHubUser(..), Hash(..), Name(..), Version(..), Commit(..))
 import System.Exit (ExitCode(..))
 import System.IO.Temp (emptySystemTempFile)
 import System.Posix.Files (removeLink)
@@ -80,14 +81,16 @@ type RevisionPackages = HashMap Name Package
 
 -- | The information we have about a nix package in one revision
 data Package = Package
-    { description :: Maybe Text
+    { name :: Name
+    , description :: Maybe Text
     , version :: Version
     , nixpkgsPath :: Maybe FilePath
     } deriving (Show, Generic, Eq)
 
 instance FromJSON Package where
     parseJSON = withObject "Package" $ \v -> Package
-       <$> (v .: "meta" >>= (.:? "description"))
+       <$> (v .: "pname" <&> Name)
+       <*> (v .: "meta" >>= (.:? "description"))
        <*>  v .:  "version"
        <*> (v .: "meta" >>= (.:? "position"))
 

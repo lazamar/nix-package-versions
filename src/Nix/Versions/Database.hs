@@ -91,6 +91,7 @@ ensureTablesAreCreated conn = do
                         <> ", FOREIGN KEY (CHANNEL, COMMIT_HASH, REPRESENTS_DATE) REFERENCES " <> db_REVISION_NEW <> " (CHANNEL, COMMIT_HASH, REPRESENTS_DATE)"
                         <> ")"
 
+    -- This one line caused a 100x speedup in package search
     SQL.execute_ conn $ "CREATE INDEX IF NOT EXISTS NAME_NOCASE_INDEX on " <> db_PACKAGE_NEW <> " (NAME COLLATE NOCASE)"
 
 disconnect :: MonadIO m => Connection -> m ()
@@ -121,7 +122,7 @@ versions (Connection conn) channel name = liftIO $ do
         ]
     return $ toVersionInfo <$> results
         where
-            toVersionInfo (SQLPackage _ pkg _ hash represents) = (pkg, hash, represents)
+            toVersionInfo (SQLPackage pkg _ hash represents) = (pkg, hash, represents)
 
 -- | Retrieve all revisions available in the database
 -- This will be between one hundred and one thousand.
@@ -193,12 +194,12 @@ saveVersion (Connection conn) name pkg@Package{version} (Revision channel (Commi
         let newerRevisionAlreadyInDatabase =
                 case listToMaybe pkgs of
                     Nothing -> False
-                    Just (SQLPackage _ _ _ _ repr) -> repr >= represents
+                    Just (SQLPackage _ _ _ repr) -> repr >= represents
 
         unless newerRevisionAlreadyInDatabase $
             SQL.execute conn
                 ("INSERT OR REPLACE INTO " <> db_PACKAGE_NEW <> " VALUES (?,?,?,?,?,?,?)")
-                (SQLPackage name pkg channel hash represents)
+                (SQLPackage pkg channel hash represents)
 
 -- | Whether all revision entries were added to the table.
 -- Order is important. Success is the max value
@@ -235,11 +236,11 @@ instance ToRow SQLRevision where
         ]
 
 -- | One row from db_PACKAGE_NEW
-data SQLPackage = SQLPackage Name Package Channel Hash Day
+data SQLPackage = SQLPackage Package Channel Hash Day
     deriving (Show, Eq)
 
-instance ToRow SQLPackage   where
-    toRow (SQLPackage name (Package description version nixpkgsPath) channel hash represents) =
+instance ToRow SQLPackage where
+    toRow (SQLPackage (Package name description version nixpkgsPath) channel hash represents) =
         [ toField name          -- NAME
         , toField version       -- VERSION
         , toField channel       -- CHANNEL
@@ -261,8 +262,7 @@ instance FromRow SQLPackage where
         where
             create name version channel hash description nixpkgsPath represents =
                 SQLPackage
-                    name
-                    (Package description version nixpkgsPath)
+                    (Package name description version nixpkgsPath)
                     channel
                     hash
                     represents

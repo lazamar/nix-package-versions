@@ -163,7 +163,7 @@ pageHome conn request = do
         revisionKey = "revision"
         instructionsAnchor = "instructions"
 
-        getVersions (channel, name) = (channel, name,) <$> Persistent.versions conn channel name
+        getVersions (channel, name) = (channel,) <$> Persistent.versions conn channel name
 
         mSelectedChannel = do
             val <- queryValueFor channelKey
@@ -182,7 +182,7 @@ pageHome conn request = do
             $ queryString request
 
         createResults Nothing = mempty
-        createResults (Just (channel, name, results)) =
+        createResults (Just (channel,results)) =
             H.table
                 ! A.class_ "pure-table-bordered pure-table"
                 ! A.style "width: 100%"
@@ -195,10 +195,10 @@ pageHome conn request = do
                 H.tbody $
                     if null results
                        then H.p "No results found"
-                       else mapM_ (toRow channel name) $ zip [0..] results
+                       else mapM_ (toRow channel) $ zip [0..] results
 
-        toRow :: Channel -> Name -> (Int, (Package, Hash, Day)) -> H.Html
-        toRow channel name (ix, (Package _ (Version v) _, hash, day)) =
+        toRow :: Channel -> (Int, (Package, Hash, Day)) -> H.Html
+        toRow channel (ix, (Package name _ (Version v) _, hash, day)) =
             H.tr
                 ! (if odd ix then A.class_ "pure-table-odd" else mempty)
                 $ do

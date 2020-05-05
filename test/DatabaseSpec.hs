@@ -27,7 +27,7 @@ spec :: Spec
 spec = do
     describe "Database" $ do
         let pname = Name "my-package"
-            pkg   = Package Nothing (Version "1.0") Nothing
+            pkg   = Package pname Nothing (Version "1.0") Nothing
             commit = Commit (Hash "hash") (ModifiedJulianDay 10)
             packages = HM.fromList [(pname, pkg)]
             revision = Revision defaultChannel  commit
@@ -50,7 +50,7 @@ spec = do
 
         it "Searching a package in a channel doesn't return results from a different channel" $ do
             overDatabase $ \conn -> do
-                let otherPkg      = Package Nothing (Version "other-version") Nothing
+                let otherPkg      = Package pname Nothing (Version "other-version") Nothing
                     otherChannel  = succ defaultChannel
                     otherCommit = Commit (Hash "otherHash") (ModifiedJulianDay 10)
                     otherRevision = Revision otherChannel otherCommit
