@@ -111,8 +111,8 @@ downloadTo filePath commit
             $ command
             $ filePath
         case res of
-            Just _  -> logDebug $ unwords ["Download successful for", show commit, "into", filePath]
-            Nothing -> logDebug $ unwords ["Download failed for", show commit, "into", filePath]
+            Nothing  -> logDebug $ unwords ["Download successful for", show commit, "into", filePath]
+            Just err -> logDebug $ unwords ["Download failed for", show commit, "into", filePath, err]
         return res
 
     where
