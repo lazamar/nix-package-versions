@@ -3,6 +3,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 {-|
@@ -19,6 +20,7 @@ module Nix.Versions.Database
     -- Write
     , saveRevisionWithPackages
     , saveRevision
+    , removeRevisionsAndPackagesFrom
 
     -- Read
     , versions
@@ -27,10 +29,10 @@ module Nix.Versions.Database
     ) where
 
 import Control.Monad.Conc.Class (MonadConc)
-import Control.Concurrent.Classy.Async (mapConcurrently_)
-import Control.Monad.Catch (MonadMask, bracket)
+import Control.Concurrent.Classy.Async (mapConcurrently_, mapConcurrently)
+import Control.Monad.Catch (MonadMask, bracket, mask, onException)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Monad (unless)
+import Control.Monad (void)
 import Data.Maybe (listToMaybe)
 import Data.Maybe (fromMaybe)
 import Data.String (fromString, IsString)
@@ -43,6 +45,7 @@ import Nix.Revision (Channel, Revision(..), RevisionPackages, Package(..))
 import Nix.Versions.Types (CachePath(..), DBFile(..), Hash(..), Version(..), Name(..), Commit(..))
 
 import qualified Database.SQLite.Simple as SQL
+import qualified Data.HashMap.Strict as HashMap
 
 newtype Connection = Connection SQL.Connection
 
@@ -153,15 +156,29 @@ fromSQLRevision (SQLRevision day revision state) = (day, revision, state)
 -------------------------------------------------------------------------------
 -- Write
 
+withTransaction :: (MonadMask m, MonadIO m) => Connection -> m a -> m a
+withTransaction (Connection conn) action = do
+    mask $ \restore -> do
+        begin
+        r <- restore action `onException` rollback
+        commit
+        return r
+    where
+        begin    = liftIO $ SQL.execute_ conn "BEGIN TRANSACTION"
+        commit   = liftIO $ SQL.execute_ conn "COMMIT TRANSACTION"
+        rollback = liftIO $ SQL.execute_ conn "ROLLBACK TRANSACTION"
+
+
 -- | Save the entire database
 saveRevisionWithPackages :: (MonadConc m, MonadIO m) => Connection -> Day -> Revision -> RevisionPackages -> m ()
 saveRevisionWithPackages conn represents revision packages = do
+    liftIO $ SQL.execute_ connection "BEGIN TRANSACTION"
     saveRevision conn represents revision Incomplete
-    mapConcurrently_ persistPackage packages
+    saveVersions conn revision represents $ HashMap.elems packages
     saveRevision conn represents revision Success
+    liftIO $ SQL.execute_ connection "COMMIT TRANSACTION"
     where
-        persistPackage package =
-            saveVersion conn package revision represents
+        Connection connection = conn
 
 -- | When there is a problem building the revision this function allows us
 -- to record that in the database so that later we don't try to build it again
@@ -172,31 +189,45 @@ saveRevision (Connection conn) represents revision state =
             (SQLRevision represents revision state)
 
 -- | Save the version info of a package in the database
-saveVersion :: MonadIO m => Connection -> Package -> Revision -> Day -> m ()
-saveVersion (Connection conn) pkg@Package{name, version} (Revision channel (Commit hash _)) represents =
+saveVersions :: (MonadConc m, MonadIO m) => Connection -> Revision -> Day -> [Package] -> m ()
+saveVersions (Connection conn) (Revision channel (Commit hash _)) represents packages  = do
     -- This should ideally happen inside of a transaction, but that causes more trouble
     -- than it is woth. It causes errors with multi-threaded inserts, as it says that
     -- we are trying to start a transaction inside another. It is unlikely that the same
     -- package version for the same channel would be added in parallel, as we currently parallelise
     -- version fetching by channel and even if it did happen the damage is minimal.
-    liftIO $ do
-        pkgs <- SQL.queryNamed
-            conn
-            ("SELECT * FROM " <> db_PACKAGE_NEW <> " WHERE NAME = :name AND VERSION = :version AND CHANNEL = :channel")
-            [ ":name"    := name
-            , ":channel" := channel
-            , ":version" := version
-            ]
+    toInsert <-
+        liftIO
+        $ fmap (map fst . filter snd)
+        $ mapConcurrently (\p -> (p,) <$> needsInserting p) packages
 
-        let newerRevisionAlreadyInDatabase =
-                case listToMaybe pkgs of
-                    Nothing -> False
-                    Just (SQLPackage _ _ _ repr) -> repr >= represents
+    liftIO $ void $ traverse insert toInsert
+    where
+        needsInserting (Package{name, version}) = do
+            pkgs <- SQL.queryNamed
+                conn
+                ("SELECT * FROM " <> db_PACKAGE_NEW <> " WHERE NAME = :name AND VERSION = :version AND CHANNEL = :channel")
+                [ ":name"    := name
+                , ":channel" := channel
+                , ":version" := version
+                ]
 
-        unless newerRevisionAlreadyInDatabase $
+            let newerRevisionAlreadyInDatabase =
+                    case listToMaybe pkgs of
+                        Nothing -> False
+                        Just (SQLPackage _ _ _ repr) -> repr >= represents
+
+            return $ not newerRevisionAlreadyInDatabase
+
+        insert pkg =
             SQL.execute conn
                 ("INSERT OR REPLACE INTO " <> db_PACKAGE_NEW <> " VALUES (?,?,?,?,?,?,?)")
                 (SQLPackage pkg channel hash represents)
+
+removeRevisionsAndPackagesFrom :: MonadIO m => Connection -> Commit -> m ()
+removeRevisionsAndPackagesFrom  (Connection conn) (Commit hash _) = liftIO $ do
+    SQL.execute conn ("DELETE FROM " <> db_PACKAGE_NEW <> " WHERE COMMIT_HASH = ?") [hash]
+    SQL.execute conn ("DELETE FROM " <> db_REVISION_NEW <> " WHERE COMMIT_HASH = ?") [hash]
 
 -- | Whether all revision entries were added to the table.
 -- Order is important. Success is the max value
