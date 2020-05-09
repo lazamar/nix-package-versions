@@ -53,3 +53,55 @@ Then in the repl
 # Duplicate table (Doesn't create the columns with the correct types)
 
     create table MY_TABLE as select * from OTHER_TABLE
+
+# Table benchmarks
+
+Initial times
+    MacOS
+        Remove 7.56
+        Add 26.87
+    Linux Docker
+        Remove 6.86
+        Add 54.7
+
+With BEGIN/END
+    MacOS
+        Add 22.5
+    Linux Docker
+        Add 36
+
+With BEGIN TRANSACTION/COMMIT TRANSACTION
+    MacOS
+        Add 21.7
+    Linux Docker
+        Add 45.52
+
+All queries beforehand without transaction
+    MacOS
+        Add 21.33
+    Linux Docker
+        Add 40.64
+
+All queries beforehand with BEGIN TRANSACTION/COMMIT TRANSACTION
+    MacOS
+        Add 19.48
+    Linux Docker
+        Add 29.9
+
+All queries beforehand with BEGIN/END
+    MacOS
+        Add 15.27
+    Linux Docker
+        Add 39.2s
+
+All queries beforehand with BEGIN TRANSACTION/COMMIT TRANSACTION and LOCKING_MODE EXCLUSIVE
+    MacOS
+        Add 15.31
+    Linux Docker
+        Add 30.s
+
+All queries beforehand JOURNAL_MODE OFF
+    MacOS
+        Add 20s
+    Linux Docker
+        Add 55.91s
