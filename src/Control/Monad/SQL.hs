@@ -12,7 +12,7 @@ and coordinating writes and reads from multiple threads.
 -}
 
 import Control.Concurrent.Classy.MVar (MVar, withMVar, readMVar, modifyMVar, newMVar, modifyMVar_, swapMVar)
-import Control.Monad.Catch (MonadMask, bracket, mask, onException, bracket_)
+import Control.Monad.Catch (MonadMask, bracket, mask, onException, bracket_,finally)
 import Control.Monad.Conc.Class (MonadConc)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Reader (ReaderT, local, ask, reader, runReaderT)
@@ -30,6 +30,7 @@ class MonadSQL m where
     execute_ :: Query -> m ()
     query    :: (ToRow q, FromRow r) => Query -> q -> m [r]
     query_   :: (FromRow r) => Query -> m [r]
+    queryNamed :: FromRow r => Query -> [NamedParam] -> m [r]
     withTransaction :: m a -> m a
 
 -- | Pass through instance
@@ -44,6 +45,7 @@ instance {-# OVERLAPPABLE #-}
     execute_ q   = lift $ execute_ q
     query    q v = lift $ query q v
     query_   q   = lift $ query_ q
+    queryNamed q v = lift $ queryNamed q v
     withTransaction a = do
         u <- askUnliftIO
         lift $ withTransaction $ liftIO $ unliftIO u a
@@ -54,7 +56,9 @@ runMonadSQL path m = do
     conn <- liftIO $ SQL.open path
     writeLock <- newMVar True
     let state = DBState conn writeLock
-    flip runReaderT state m
+    finally
+        (flip runReaderT state m)
+        (liftIO $ SQL.close conn)
 
 data DBState m = DBState
     { conn :: SQL.Connection
@@ -66,6 +70,7 @@ instance (MonadConc m, MonadMask m, MonadIO m) => MonadSQL (ReaderT (DBState m) 
     execute_ q   = write $ \conn -> liftIO $ SQL.execute_ conn q
     query    q v = reader conn >>= \conn -> liftIO $ SQL.query conn q v
     query_   q   = reader conn >>= \conn -> liftIO $ SQL.query_ conn q
+    queryNamed q v = reader conn >>= \conn -> liftIO $ SQL.queryNamed conn q v
     withTransaction action =
         write $ \conn -> do
             transactionWriteLock <- newMVar True
