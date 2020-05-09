@@ -11,15 +11,13 @@ A monad to provide access to an SQL database handling nested transactions
 and coordinating writes and reads from multiple threads.
 -}
 
-import Control.Concurrent.Classy.MVar (MVar, withMVar, readMVar, modifyMVar, newMVar, modifyMVar_, swapMVar)
-import Control.Monad.Catch (MonadMask, bracket, mask, onException, bracket_,finally)
+import Control.Concurrent.Classy.MVar (MVar, withMVar, newMVar, swapMVar)
+import Control.Monad.Catch (MonadMask, mask, onException, finally)
 import Control.Monad.Conc.Class (MonadConc)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Reader (ReaderT, local, ask, reader, runReaderT)
 import Control.Monad.Trans.Class (MonadTrans, lift)
-import Database.SQLite.Simple (ToRow(toRow), FromRow(fromRow), SQLData(..), NamedParam((:=)), Query)
-import Database.SQLite.Simple.FromField (FromField(..))
-import Database.SQLite.Simple.ToField (ToField(..))
+import Database.SQLite.Simple (ToRow, FromRow, NamedParam, Query)
 import UnliftIO (askUnliftIO, MonadUnliftIO, unliftIO)
 
 import qualified Database.SQLite.Simple as SQL

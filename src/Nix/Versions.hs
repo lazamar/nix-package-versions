@@ -19,6 +19,7 @@ import Control.Concurrent.Classy.Async (mapConcurrently, forConcurrently)
 import Control.Monad.Conc.Class (MonadConc)
 import Control.Monad.LimitedConc (runTask, MonadLimitedConc)
 import Control.Monad.Fail (MonadFail)
+import Control.Monad.SQL (MonadSQL)
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Log (MonadLog, WithSeverity, logDebug, logInfo)
 import Data.Bifunctor (first)
@@ -27,7 +28,7 @@ import Data.Set (Set)
 import Data.Time.Calendar (Day, showGregorian)
 import Data.Time.Calendar.WeekDate (toWeekDate, fromWeekDate)
 import Nix.Revision (Revision(..), Channel(..), revisionsOn, RevisionPackages)
-import Nix.Versions.Database (Connection, RevisionState(..))
+import Nix.Versions.Database (RevisionState(..))
 import Nix.Versions.Types (Commit(..), Config(..), Task(..))
 import Control.Monad.Revisions (MonadRevisions, packagesFor)
 
@@ -44,35 +45,35 @@ savePackageVersionsForPeriod ::
     , MonadFail m
     , MonadIO m
     , MonadRevisions m
+    , MonadSQL m
     )
     => Config -> Day -> Day -> m [Either String String]
-savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
-    DB.withConnection cacheDir dbFile $ \conn -> do
-        daysToDownload <- forConcurrently [minBound..] $ \channel -> do
-            days <- daysNeededFor conn channel
-            return $ (channel,) <$> days
-        results <- mapConcurrently (uncurry $ buildAndSaveDay conn) $ concat daysToDownload
-        return $ concat results
+savePackageVersionsForPeriod (Config _ _ gitUser) from to = do
+    daysToDownload <- forConcurrently [minBound..] $ \channel -> do
+        days <- daysNeededFor channel
+        return $ (channel,) <$> days
+    results <- mapConcurrently (uncurry $ buildAndSaveDay) $ concat daysToDownload
+    return $ concat results
     where
         maxAttempts = 10
 
-        buildAndSaveDay :: _ => Connection -> Channel -> Day -> m [Either String String]
-        buildAndSaveDay conn channel day = do
+        buildAndSaveDay :: _ => Channel -> Day -> m [Either String String]
+        buildAndSaveDay channel day = do
             revisionsOn gitUser channel day >>= \case
                 Left err -> return $ [Left err]
                 Right dayRevisions ->
                     -- We will try only a few revisions. If they don't succeed we give up on that revision.
                     tryInSequence
-                        $ fmap (\r -> saveToDatabase conn day r =<< download r)
+                        $ fmap (\r -> saveToDatabase day r =<< download r)
                         $ take maxAttempts
                         $ dayRevisions
 
         download :: _ => Revision -> m (Either String RevisionPackages)
         download (Revision _ commit) = first show <$> packagesFor commit
 
-        daysNeededFor :: _ => Connection -> Channel -> m [Day]
-        daysNeededFor conn channel = do
-            dbRevisions <- DB.revisions conn channel
+        daysNeededFor :: _ => Channel -> m [Day]
+        daysNeededFor channel = do
+            dbRevisions <- DB.revisions channel
             return
                 $ fmap toMonday
                 $ Set.toList
@@ -86,17 +87,17 @@ savePackageVersionsForPeriod (Config dbFile cacheDir gitUser) from to =
 
 -- | Given the result of a revision download attempt, save the appropriate
 -- result to the database and return some info about what was done
-saveToDatabase :: _ => Connection -> Day -> Revision -> Either String RevisionPackages -> m (Either String String)
-saveToDatabase conn day revision ePackages =
+saveToDatabase :: _ => Day -> Revision -> Either String RevisionPackages -> m (Either String String)
+saveToDatabase day revision ePackages =
     runTask SaveToDatabase $ do
         case ePackages  of
             Left err -> do
                 logDebug $ msg $ "Saving invalid"
-                DB.saveRevision conn day revision InvalidRevision
+                DB.saveRevision day revision InvalidRevision
                 return $ Left err
             Right packages -> do
                 logInfo $ msg "Saving successful"
-                DB.saveRevisionWithPackages conn day revision packages
+                DB.saveRevisionWithPackages day revision packages
                 logInfo $ msg "Saved"
                 return $ Right $ msg "Success"
     where

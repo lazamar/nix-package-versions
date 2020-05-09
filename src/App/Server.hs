@@ -1,11 +1,17 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TupleSections #-}
 
 module App.Server (run, Port(..)) where
 
 import Control.Arrow ((&&&))
 import Control.Monad (mapM_, join)
+import Control.Monad.SQL (MonadSQL)
+import Control.Monad.Conc.Class (MonadConc)
+import Control.Monad.IO.Class (liftIO, MonadIO)
+import Control.Monad.Log (MonadLog, WithSeverity(..), logInfo)
 import Data.Either (fromRight)
 import Data.Foldable (traverse_)
 import Data.List (lookup)
@@ -17,11 +23,11 @@ import Data.Time.Calendar (Day, showGregorian)
 import Network.HTTP.Types (status200, status404, renderQuery, queryTextToQuery)
 import Network.Wai (Application, Request, Response, responseLBS, rawPathInfo, queryString)
 import Nix.Revision (Package(..), Channel(..), GitBranch(..), channelBranch)
-import Nix.Versions.Database (Connection)
 import Nix.Versions.Types (Hash(..), Version(..), Config(..), Name(..))
 import Text.Blaze.Html.Renderer.Utf8 (renderHtml)
 import Text.Blaze.Html5 ((!))
 import Text.Blaze (toValue, toMarkup)
+import UnliftIO (MonadUnliftIO, askRunInIO)
 
 import qualified Network.Wai.Handler.Warp as Warp
 import qualified Text.Blaze.Html5 as H
@@ -34,21 +40,28 @@ import qualified Nix.Versions.Database as Persistent
 newtype Port = Port Int
     deriving (Show, Eq, Read)
 
-run :: Port -> Config -> IO ()
+run ::
+    ( MonadIO m
+    , MonadLog (WithSeverity String) m
+    , MonadConc m
+    , MonadSQL m
+    , MonadUnliftIO m
+    ) => Port -> Config -> m ()
 run (Port port) config = do
-    conn <- Persistent.connect (config_cacheDirectory config) (config_databaseFile config)
-    putStrLn $ "Running server on port " <> show port
-    Warp.run port (app conn)
+    Persistent.withConnection (config_cacheDirectory config) (config_databaseFile config) $ do
+        logInfo $ "Running server on port " <> show port
+        runInIO <- askRunInIO
+        liftIO . Warp.run port $ app runInIO
 
-app :: Connection -> Application
-app conn request respond = do
-    response <- case rawPathInfo request of
-        "/"     -> pageHome conn request
+app :: MonadSQL m => (m Response -> IO Response) -> Application
+app runInIO request respond = do
+    response <- runInIO $ case rawPathInfo request of
+        "/"     -> pageHome request
         _       -> return pageNotFound
     respond response
 
-pageHome :: Connection -> Request -> IO Response
-pageHome conn request = do
+pageHome :: MonadSQL m => Request -> m Response
+pageHome request = do
     mPackages <- traverse getVersions mSearched
     return $ responseLBS status200 [("Content-Type", "text/html")] $ renderHtml $
         H.docTypeHtml do
@@ -163,7 +176,7 @@ pageHome conn request = do
         revisionKey = "revision"
         instructionsAnchor = "instructions"
 
-        getVersions (channel, name) = (channel,) <$> Persistent.versions conn channel name
+        getVersions (channel, name) = (channel,) <$> Persistent.versions channel name
 
         mSelectedChannel = do
             val <- queryValueFor channelKey
