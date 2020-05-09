@@ -25,7 +25,7 @@ import UnliftIO (askUnliftIO, MonadUnliftIO, unliftIO)
 import qualified Database.SQLite.Simple as SQL
 
 -- | Access an SQL database
-class MonadSQL m where
+class Monad m => MonadSQL m where
     execute  :: ToRow q => Query -> q -> m ()
     execute_ :: Query -> m ()
     query    :: (ToRow q, FromRow r) => Query -> q -> m [r]
@@ -36,9 +36,9 @@ class MonadSQL m where
 -- | Pass through instance
 instance {-# OVERLAPPABLE #-}
     ( MonadUnliftIO (t m)
+    , Monad (t m)
     , MonadIO m
     , MonadTrans t
-    , Monad m
     , MonadSQL m
     ) => MonadSQL (t m) where
     execute  q v = lift $ execute q v

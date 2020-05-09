@@ -12,10 +12,7 @@ Save and retrieving Database types from persistent storage
 -}
 
 module Nix.Versions.Database
-    ( Connection
-    , RevisionState(..)
-    , connect
-    , disconnect
+    ( RevisionState(..)
     , withConnection
 
     -- Write
@@ -33,7 +30,7 @@ import Control.Monad.Conc.Class (MonadConc)
 import Control.Concurrent.Classy.Async (mapConcurrently)
 import Control.Concurrent.Classy.MVar (MVar, withMVar, readMVar, modifyMVar, newMVar, modifyMVar_, swapMVar)
 import Control.Monad.Catch (MonadMask, bracket, mask, onException, bracket_)
-import Control.Monad.IO.Class (MonadIO, liftIO)
+import Control.Monad.IO.Class (MonadIO)
 import Control.Monad (void)
 import Control.Monad.Reader (ReaderT, local, ask, reader)
 import Data.Maybe (listToMaybe)
@@ -58,22 +55,23 @@ db_REVISION_NEW , db_PACKAGE_NEW :: IsString a => a
 db_REVISION_NEW = "revision"
 db_PACKAGE_NEW = "package"
 
--- | Get a connection and prepare database for usage
-connect :: MonadIO m => CachePath -> DBFile -> m Connection
-connect (CachePath dir) (DBFile fname) = liftIO $ do
-    conn <- SQL.open $ dir <> "/" <> fname
-    -- Enable foreign key constraints.
-    -- It's really weird that they would otherwise just not work.
-    SQL.execute_ conn "PRAGMA foreign_keys = ON"
-    -- Make sure the correct transaction tracking option is in place
-    SQL.execute_ conn "PRAGMA journal_mode = WAL"
-    SQL.execute_ conn "PRAGMA synchronous = NORMAL"
-    ensureTablesAreCreated conn
-    return $ Connection conn
+withConnection :: (MonadConc m, MonadMask m, MonadIO m) => CachePath -> DBFile -> MonadSQLT m a -> m a
+withConnection (CachePath dir) (DBFile fname) action =
+    runMonadSQL path $ do
+        -- Prepare database for usage
+        -- Enable foreign key constraints. It's really weird that they would otherwise just not work.
+        execute_ "PRAGMA foreign_keys = ON"
+        -- Make sure the correct transaction tracking option is in place
+        execute_ "PRAGMA journal_mode = WAL"
+        execute_ "PRAGMA synchronous = NORMAL"
+        ensureTablesAreCreated
+        action
+    where
+        path = dir <> "/" <> fname
 
-ensureTablesAreCreated :: SQL.Connection -> IO ()
-ensureTablesAreCreated conn = do
-    SQL.execute_ conn $ "CREATE TABLE IF NOT EXISTS " <> db_REVISION_NEW <> " "
+ensureTablesAreCreated :: MonadSQL m => m ()
+ensureTablesAreCreated = do
+    execute_ $ "CREATE TABLE IF NOT EXISTS " <> db_REVISION_NEW <> " "
                         <> "( COMMIT_HASH       TEXT NOT NULL"
                         <> ", COMMIT_DATE       TEXT NOT NULL"
                         <> ", CHANNEL           TEXT NOT NULL"
@@ -82,7 +80,7 @@ ensureTablesAreCreated conn = do
                         <> ", PRIMARY KEY (CHANNEL, COMMIT_HASH, REPRESENTS_DATE)"
                         <> ")"
 
-    SQL.execute_ conn $ "CREATE TABLE IF NOT EXISTS " <> db_PACKAGE_NEW <> " "
+    execute_ $ "CREATE TABLE IF NOT EXISTS " <> db_PACKAGE_NEW <> " "
                         <> "( NAME              TEXT NOT NULL"
                         <> ", VERSION           TEXT NOT NULL"
                         <> ", CHANNEL           TEXT NOT NULL"
@@ -95,13 +93,8 @@ ensureTablesAreCreated conn = do
                         <> ")"
 
     -- This one line caused a 100x speedup in package search
-    SQL.execute_ conn $ "CREATE INDEX IF NOT EXISTS NAME_NOCASE_INDEX on " <> db_PACKAGE_NEW <> " (NAME COLLATE NOCASE)"
+    execute_ $ "CREATE INDEX IF NOT EXISTS NAME_NOCASE_INDEX on " <> db_PACKAGE_NEW <> " (NAME COLLATE NOCASE)"
 
-disconnect :: MonadIO m => Connection -> m ()
-disconnect (Connection conn) = liftIO $ SQL.close conn
-
-withConnection :: (MonadMask m, MonadIO m) => CachePath -> DBFile -> (Connection -> m a) -> m a
-withConnection cache file = bracket (connect cache file) disconnect
 
 -------------------------------------------------------------------------------
 -- Read
@@ -109,10 +102,9 @@ withConnection cache file = bracket (connect cache file) disconnect
 -- | Retrieve all versions available for a package
 -- This will be on the order of the tens, or maximum the
 -- hundreds, so it is fine to just return all of them
-versions :: MonadIO m => Connection -> Channel -> Name -> m [(Package, Hash, Day)]
-versions (Connection conn) channel name = liftIO $ do
-    results <- SQL.queryNamed
-        conn
+versions :: MonadSQL m => Channel -> Name -> m [(Package, Hash, Day)]
+versions channel name = do
+    results <- queryNamed
         (fromString $ unwords
             [ "SELECT *"
             , "FROM"
@@ -129,21 +121,17 @@ versions (Connection conn) channel name = liftIO $ do
 
 -- | Retrieve all revisions available in the database
 -- This will be between one hundred and one thousand.
-revisions :: MonadIO m => Connection -> Channel -> m [(Day, Revision, RevisionState)]
-revisions (Connection conn) channel = liftIO $ do
-    results <- SQL.query
-        conn
-        ("SELECT * FROM " <> db_REVISION_NEW <> " WHERE CHANNEL = ?")
-        [channel]
+revisions :: MonadSQL m => Channel -> m [(Day, Revision, RevisionState)]
+revisions channel = do
+    results <- query ("SELECT * FROM " <> db_REVISION_NEW <> " WHERE CHANNEL = ?") [channel]
     return $ fromSQLRevision <$> results
 
 -- | Answers the question "did we insert all packages contained in this commit?"
 -- It requires a channel because a commit may be used in multiple channels and the
 -- outcome in packages may be different
-revisionState :: MonadIO m => Connection -> Revision -> m (Maybe RevisionState)
-revisionState (Connection conn) (Revision channel (Commit (Hash hash) _)) = do
-    commits <- liftIO $ SQL.queryNamed
-        conn
+revisionState :: MonadSQL m => Revision -> m (Maybe RevisionState)
+revisionState (Revision channel (Commit (Hash hash) _)) = do
+    commits <- queryNamed
         ("SELECT * FROM " <> db_REVISION_NEW <> " WHERE COMMIT_HASH = :hash AND CHANNEl = :channel")
         [ ":hash"    := hash
         , ":channel" := channel
@@ -161,64 +149,53 @@ fromSQLRevision (SQLRevision day revision state) = (day, revision, state)
 
 
 -- | Save the entire database
-saveRevisionWithPackages :: (MonadConc m, MonadIO m) => Connection -> Day -> Revision -> RevisionPackages -> m ()
-saveRevisionWithPackages conn represents revision packages = do
-    liftIO $ SQL.execute_ connection "BEGIN TRANSACTION"
-    saveRevision conn represents revision Incomplete
-    saveVersions conn revision represents $ HashMap.elems packages
-    saveRevision conn represents revision Success
-    liftIO $ SQL.execute_ connection "COMMIT TRANSACTION"
-    where
-        Connection connection = conn
+saveRevisionWithPackages :: (MonadConc m, MonadSQL m) => Day -> Revision -> RevisionPackages -> m ()
+saveRevisionWithPackages represents revision packages =
+    withTransaction $ do
+        saveRevision represents revision Incomplete
+        saveVersions revision represents $ HashMap.elems packages
+        saveRevision represents revision Success
 
 -- | When there is a problem building the revision this function allows us
 -- to record that in the database so that later we don't try to build it again
-saveRevision :: MonadIO m => Connection -> Day -> Revision -> RevisionState -> m ()
-saveRevision (Connection conn) represents revision state =
-    liftIO $ SQL.execute conn
-            ("INSERT OR REPLACE INTO " <> db_REVISION_NEW <> " VALUES (?,?,?,?,?)")
-            (SQLRevision represents revision state)
+saveRevision :: MonadSQL m => Day -> Revision -> RevisionState -> m ()
+saveRevision represents revision state =
+    execute
+        ("INSERT OR REPLACE INTO " <> db_REVISION_NEW <> " VALUES (?,?,?,?,?)")
+        (SQLRevision represents revision state)
 
 -- | Save the version info of a package in the database
-saveVersions :: (MonadConc m, MonadIO m) => Connection -> Revision -> Day -> [Package] -> m ()
-saveVersions (Connection conn) (Revision channel (Commit hash _)) represents packages  = do
+saveVersions :: (MonadConc m, MonadSQL m) => Revision -> Day -> [Package] -> m ()
+saveVersions (Revision channel (Commit hash _)) represents packages  = do
     -- This should ideally happen inside of a transaction, but that causes more trouble
     -- than it is woth. It causes errors with multi-threaded inserts, as it says that
     -- we are trying to start a transaction inside another. It is unlikely that the same
     -- package version for the same channel would be added in parallel, as we currently parallelise
     -- version fetching by channel and even if it did happen the damage is minimal.
-    toInsert <-
-        liftIO
-        $ fmap (map fst . filter snd)
-        $ mapConcurrently (\p -> (p,) <$> needsInserting p) packages
-
-    liftIO $ void $ traverse insert toInsert
+    toInsert <- (map fst . filter snd) <$> mapConcurrently (\p -> (p,) <$> needsInserting p) packages
+    void $ traverse insert toInsert
     where
         needsInserting (Package{name, version}) = do
-            pkgs <- SQL.queryNamed
-                conn
+            pkgs <- queryNamed
                 ("SELECT * FROM " <> db_PACKAGE_NEW <> " WHERE NAME = :name AND VERSION = :version AND CHANNEL = :channel")
                 [ ":name"    := name
                 , ":channel" := channel
                 , ":version" := version
                 ]
-
             let newerRevisionAlreadyInDatabase =
                     case listToMaybe pkgs of
                         Nothing -> False
                         Just (SQLPackage _ _ _ repr) -> repr >= represents
-
             return $ not newerRevisionAlreadyInDatabase
 
-        insert pkg =
-            SQL.execute conn
-                ("INSERT OR REPLACE INTO " <> db_PACKAGE_NEW <> " VALUES (?,?,?,?,?,?,?)")
-                (SQLPackage pkg channel hash represents)
+        insert pkg = execute
+            ("INSERT OR REPLACE INTO " <> db_PACKAGE_NEW <> " VALUES (?,?,?,?,?,?,?)")
+            (SQLPackage pkg channel hash represents)
 
-removeRevisionsAndPackagesFrom :: MonadIO m => Connection -> Commit -> m ()
-removeRevisionsAndPackagesFrom  (Connection conn) (Commit hash _) = liftIO $ do
-    SQL.execute conn ("DELETE FROM " <> db_PACKAGE_NEW <> " WHERE COMMIT_HASH = ?") [hash]
-    SQL.execute conn ("DELETE FROM " <> db_REVISION_NEW <> " WHERE COMMIT_HASH = ?") [hash]
+removeRevisionsAndPackagesFrom :: MonadSQL m => Commit -> m ()
+removeRevisionsAndPackagesFrom (Commit hash _) = do
+    execute ("DELETE FROM " <> db_PACKAGE_NEW <> " WHERE COMMIT_HASH = ?") [hash]
+    execute ("DELETE FROM " <> db_REVISION_NEW <> " WHERE COMMIT_HASH = ?") [hash]
 
 -- | Whether all revision entries were added to the table.
 -- Order is important. Success is the max value
