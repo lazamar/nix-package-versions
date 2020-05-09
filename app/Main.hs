@@ -41,8 +41,6 @@ import UnliftIO (withRunInIO)
 
 main :: IO ()
 main = do
-  testDB
-  when False $ do
     CommandLineOptions{..} <- cliOptions
     if not cli_downloadVersions
         then runServer cli_port
