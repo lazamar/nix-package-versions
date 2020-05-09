@@ -50,56 +50,8 @@ import Nix.Versions.Types (CachePath(..), DBFile(..), Hash(..), Version(..), Nam
 import qualified Database.SQLite.Simple as SQL
 import qualified Data.HashMap.Strict as HashMap
 
-newtype Connection = Connection SQL.Connection
+import Control.Monad.SQL
 
-class MonadDB m where
-    execute  :: ToRow q => Query -> q -> m ()
-    execute_ :: Query -> m ()
-    query    :: (ToRow q, FromRow r) => Query -> q -> m [r]
-    query_   :: (FromRow r) => Query -> m [r]
-    withTransaction :: m a -> m a
-
--- | All writes are in a transaction.
--- A transaction is a group of writes that blocks other writes that
--- are not in this transaction.
-data DBState m = DBState
-    { conn :: SQL.Connection
-    , writeLock :: MVar m Bool -- ^ Is transaction still active
-    }
-
-newtype TransactionID = TransactionID Int
-
-instance (MonadConc m, MonadMask m, MonadIO m) => MonadDB (ReaderT (DBState m) m) where
-    execute  q v = write $ \conn -> liftIO $ SQL.execute conn q v
-    execute_ q   = write $ \conn -> liftIO $ SQL.execute_ conn q
-    query    q v = reader conn >>= \conn -> liftIO $ SQL.query conn q v
-    query_   q   = reader conn >>= \conn -> liftIO $ SQL.query_ conn q
-    withTransaction action =
-        write $ \conn -> do
-            transactionWriteLock <- newMVar True
-            let closeTransaction = swapMVar transactionWriteLock False
-            local (\s -> s { writeLock = transactionWriteLock }) $ runTransaction conn closeTransaction
-        where
-            runTransaction conn closeTransaction = do
-                mask $ \restore -> do
-                    begin
-                    r <- restore (action <* closeTransaction) `onException` rollback
-                    commit
-                    return r
-                where
-                    begin    = liftIO $ SQL.execute_ conn "BEGIN TRANSACTION"
-                    commit   = liftIO $ SQL.execute_ conn "COMMIT TRANSACTION"
-                    rollback = liftIO $ SQL.execute_ conn "ROLLBACK TRANSACTION"
-
-type MonadDBT m a = ReaderT (DBState m) m a
-
-write :: MonadConc m => (SQL.Connection -> MonadDBT m a) -> MonadDBT m a
-write action = do
-    DBState conn writeLock <- ask
-    withMVar writeLock $ \case
-        False -> error "Trying to write after transaction was closed"
-        True  -> action conn
---
 -- Constants
 
 db_REVISION_NEW , db_PACKAGE_NEW :: IsString a => a
