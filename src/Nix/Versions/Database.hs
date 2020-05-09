@@ -111,6 +111,7 @@ versions channel name = do
             , "FROM"
             , db_PACKAGE_NEW
             , "WHERE CHANNEL = :channel AND NAME = :name COLLATE NOCASE"
+            , "ORDER BY REPRESENTS_DATE"
             ]
         )
         [ ":name"    := name

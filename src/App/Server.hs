@@ -254,10 +254,10 @@ pageHome request = do
                         H.td $ toMarkup $ fromHash hash
 
                 H.p $ "Install " <> H.code (toMarkup name) <> " with " <> H.code "nix-env" <> "."
-                nixCodeBlock $ "nix-env -qaP ghc -f " <> revisionURL hash
+                nixCodeBlock $ "nix-env -qaP " <> name <> " -f " <> revisionURL hash
 
                 H.p $ "Use " <> H.code (toMarkup name) <> " in a " <> H.code "nix-shell" <> "."
-                nixCodeBlock $ "nix-shell -p bat -I nixpkgs=" <> revisionURL hash
+                nixCodeBlock $ "nix-shell -p " <> name <> " -I nixpkgs=" <> revisionURL hash
 
                 H.p $ "Use " <> H.code (toMarkup name) <> " in a nix script"
                 nixCodeBlock $ Text.unlines
