@@ -31,11 +31,11 @@ module Nix.Versions.Database
 
 import Control.Monad.Conc.Class (MonadConc)
 import Control.Concurrent.Classy.Async (mapConcurrently)
-import Control.Concurrent.Classy.MVar (MVar, withMVar, readMVar, modifyMVar, newMVar, modifyMVar_)
+import Control.Concurrent.Classy.MVar (MVar, withMVar, readMVar, modifyMVar, newMVar, modifyMVar_, swapMVar)
 import Control.Monad.Catch (MonadMask, bracket, mask, onException, bracket_)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad (void)
-import Control.Monad.Reader (ReaderT, local, ask)
+import Control.Monad.Reader (ReaderT, local, ask, reader)
 import Data.Maybe (listToMaybe)
 import Data.Maybe (fromMaybe)
 import Data.String (fromString, IsString)
@@ -56,7 +56,7 @@ class MonadDB m where
     execute  :: ToRow q => Query -> q -> m ()
     execute_ :: Query -> m ()
     query    :: (ToRow q, FromRow r) => Query -> q -> m [r]
-    query_   :: (ToRow q, FromRow r) => Query -> q -> m [r]
+    query_   :: (FromRow r) => Query -> m [r]
     withTransaction :: m a -> m a
 
 -- | All writes are in a transaction.
@@ -64,41 +64,21 @@ class MonadDB m where
 -- are not in this transaction.
 data DBState m = DBState
     { conn :: SQL.Connection
-    -- | Global transaction lock
-    -- Used to block transactions in other threads while a transaction is going on
-    , activeTransaction :: MVar m ()
-    -- Local transaction
-    -- Only the thread that started the transaction and its children
-    -- will have access to the mvar saying whether the transaction is
-    -- still active or not.
-    , inTransaction :: Maybe -- am I in a transaction
-                        (MVar m -- transaction data
-                            (Maybe -- is the transaction still active
-                                (MVar m ()))) -- Write lock
+    , writeLock :: MVar m Bool -- ^ Is transaction still active
     }
 
 newtype TransactionID = TransactionID Int
 
 instance (MonadConc m, MonadMask m, MonadIO m) => MonadDB (ReaderT (DBState m) m) where
-    execute   =  undefined
-    execute_  =  undefined
-    query     =  undefined
-    query_    =  undefined
-    withTransaction action = do
-        DBState conn activeTrans inTransaction <- ask
-        case inTransaction  of
-            Just transVar -> do -- Already in transaction
-                active <- readMVar transVar
-                case active of
-                    Nothing -> error "Trying to create sub-transaction when parent transaction is closed"
-                    Just _  -> action
-            Nothing -> modifyMVar activeTrans $ \() -> do
-                writeLock      <- newMVar ()
-                transactionVar <- newMVar (Just writeLock)
-                let closeTransaction = modifyMVar_ transactionVar (const $ return $ Nothing)
-                r <- local (\s -> s { inTransaction = Just transactionVar })
-                        $ runTransaction conn closeTransaction
-                return ((), r)
+    execute  q v = write $ \conn -> liftIO $ SQL.execute conn q v
+    execute_ q   = write $ \conn -> liftIO $ SQL.execute_ conn q
+    query    q v = reader conn >>= \conn -> liftIO $ SQL.query conn q v
+    query_   q   = reader conn >>= \conn -> liftIO $ SQL.query_ conn q
+    withTransaction action =
+        write $ \conn -> do
+            transactionWriteLock <- newMVar True
+            let closeTransaction = swapMVar transactionWriteLock False
+            local (\s -> s { writeLock = transactionWriteLock }) $ runTransaction conn closeTransaction
         where
             runTransaction conn closeTransaction = do
                 mask $ \restore -> do
@@ -113,21 +93,13 @@ instance (MonadConc m, MonadMask m, MonadIO m) => MonadDB (ReaderT (DBState m) m
 
 type MonadDBT m a = ReaderT (DBState m) m a
 
-write :: MonadConc m => (SQL.Connection -> MonadDBT m ()) -> MonadDBT m ()
+write :: MonadConc m => (SQL.Connection -> MonadDBT m a) -> MonadDBT m a
 write action = do
-    DBState conn activeTrans inTrans <- ask
-    case inTrans of
-        Nothing -> withMVar activeTrans $ action conn
-        Just transVar -> do
-            trans <- readMVar transVar
-            case trans of
-                Nothing -> error "Trying to write after transaction was closed"
-                Just writeCount ->
-                    bracket_
-                        (atomically $ modifyTVar (+ 1))
-                        (atomically $ modifyTVar (- 1))
-                        (action conn)
-
+    DBState conn writeLock <- ask
+    withMVar writeLock $ \case
+        False -> error "Trying to write after transaction was closed"
+        True  -> action conn
+--
 -- Constants
 
 db_REVISION_NEW , db_PACKAGE_NEW :: IsString a => a
