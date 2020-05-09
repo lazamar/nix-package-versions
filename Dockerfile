@@ -3,12 +3,11 @@ FROM haskell:8.6.5
 # Set root password to 'root'
 RUN echo 'root:root' |  chpasswd
 
-RUN apt-get update && apt-get install -y curl bzip2 adduser tmux vim
+RUN apt-get update && apt-get install -y curl bzip2 adduser tmux vim sqlite3
 
 # Build project as root
 COPY . /home/marcelo
 WORKDIR /home/marcelo
-RUN stack build
 
 # Nix installation
 RUN adduser --disabled-password --gecos '' marcelo
@@ -30,4 +29,5 @@ RUN curl https://nixos.org/nix/install | sh
 # our nix commands with `. .nix-profile/etc/profile.d/nix.sh` to ensure
 # nix manages our $PATH appropriately.
 RUN . .nix-profile/etc/profile.d/nix.sh && nix-channel --update
+RUN echo '. .nix-profile/etc/profile.d/nix.sh' >> ~/.bashrc
 
