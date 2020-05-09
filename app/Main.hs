@@ -16,6 +16,7 @@ import Text.Read (readMaybe)
 import Nix.Versions.Types (DBFile(..),GitHubUser(..), CachePath(..), Config(..), Task(..), Commit(..), Hash(..))
 import Control.Concurrent.Classy.Async (replicateConcurrently)
 import Control.Monad (mapM_, when, void)
+import Control.Monad.Conc.Class (getNumCapabilities)
 import Control.Monad.Log2 (runLoggerT, inTerminal, logInfoTimed)
 import Control.Monad.Log (logInfo)
 import Control.Monad.IO.Class (MonadIO, liftIO)
@@ -58,11 +59,13 @@ main = do
 
     where
         -- | Run our monad stack
-        run (Config dbFile cacheDir _)
-            = runLoggerT inTerminal
-            . runMonadLimitedConc (Map.fromList [(BuildNixRevision, 3)])
-            . runMonadRevisions
-            . DB.withConnection cacheDir dbFile
+        run (Config dbFile cacheDir _) action = do
+            capabilities <- getNumCapabilities
+
+            runLoggerT inTerminal
+                $ runMonadLimitedConc (Map.fromList [(BuildNixRevision, max 1 $ capabilities - 3)])
+                $ runMonadRevisions
+                $ DB.withConnection cacheDir dbFile action
 
         downloadRevisions :: Day -> Day -> IO ()
         downloadRevisions from to = do
