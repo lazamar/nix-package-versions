@@ -4,6 +4,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 {-|
@@ -29,16 +30,18 @@ module Nix.Versions.Database
     ) where
 
 import Control.Monad.Conc.Class (MonadConc)
-import Control.Concurrent.Classy.Async (mapConcurrently_, mapConcurrently)
-import Control.Monad.Catch (MonadMask, bracket, mask, onException)
+import Control.Concurrent.Classy.Async (mapConcurrently)
+import Control.Concurrent.Classy.MVar (MVar, withMVar, readMVar, modifyMVar, newMVar, modifyMVar_)
+import Control.Monad.Catch (MonadMask, bracket, mask, onException, bracket_)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad (void)
+import Control.Monad.Reader (ReaderT, local, ask)
 import Data.Maybe (listToMaybe)
 import Data.Maybe (fromMaybe)
 import Data.String (fromString, IsString)
 import Data.Text (pack)
 import Data.Time.Calendar (Day(..))
-import Database.SQLite.Simple (ToRow(toRow), FromRow(fromRow), SQLData(..), NamedParam((:=)))
+import Database.SQLite.Simple (ToRow(toRow), FromRow(fromRow), SQLData(..), NamedParam((:=)), Query)
 import Database.SQLite.Simple.FromField (FromField(..))
 import Database.SQLite.Simple.ToField (ToField(..))
 import Nix.Revision (Channel, Revision(..), RevisionPackages, Package(..))
@@ -48,6 +51,82 @@ import qualified Database.SQLite.Simple as SQL
 import qualified Data.HashMap.Strict as HashMap
 
 newtype Connection = Connection SQL.Connection
+
+class MonadDB m where
+    execute  :: ToRow q => Query -> q -> m ()
+    execute_ :: Query -> m ()
+    query    :: (ToRow q, FromRow r) => Query -> q -> m [r]
+    query_   :: (ToRow q, FromRow r) => Query -> q -> m [r]
+    withTransaction :: m a -> m a
+
+-- | All writes are in a transaction.
+-- A transaction is a group of writes that blocks other writes that
+-- are not in this transaction.
+data DBState m = DBState
+    { conn :: SQL.Connection
+    -- | Global transaction lock
+    -- Used to block transactions in other threads while a transaction is going on
+    , activeTransaction :: MVar m ()
+    -- Local transaction
+    -- Only the thread that started the transaction and its children
+    -- will have access to the mvar saying whether the transaction is
+    -- still active or not.
+    , inTransaction :: Maybe -- am I in a transaction
+                        (MVar m -- transaction data
+                            (Maybe -- is the transaction still active
+                                (MVar m ()))) -- Write lock
+    }
+
+newtype TransactionID = TransactionID Int
+
+instance (MonadConc m, MonadMask m, MonadIO m) => MonadDB (ReaderT (DBState m) m) where
+    execute   =  undefined
+    execute_  =  undefined
+    query     =  undefined
+    query_    =  undefined
+    withTransaction action = do
+        DBState conn activeTrans inTransaction <- ask
+        case inTransaction  of
+            Just transVar -> do -- Already in transaction
+                active <- readMVar transVar
+                case active of
+                    Nothing -> error "Trying to create sub-transaction when parent transaction is closed"
+                    Just _  -> action
+            Nothing -> modifyMVar activeTrans $ \() -> do
+                writeLock      <- newMVar ()
+                transactionVar <- newMVar (Just writeLock)
+                let closeTransaction = modifyMVar_ transactionVar (const $ return $ Nothing)
+                r <- local (\s -> s { inTransaction = Just transactionVar })
+                        $ runTransaction conn closeTransaction
+                return ((), r)
+        where
+            runTransaction conn closeTransaction = do
+                mask $ \restore -> do
+                    begin
+                    r <- restore (action <* closeTransaction) `onException` rollback
+                    commit
+                    return r
+                where
+                    begin    = liftIO $ SQL.execute_ conn "BEGIN TRANSACTION"
+                    commit   = liftIO $ SQL.execute_ conn "COMMIT TRANSACTION"
+                    rollback = liftIO $ SQL.execute_ conn "ROLLBACK TRANSACTION"
+
+type MonadDBT m a = ReaderT (DBState m) m a
+
+write :: MonadConc m => (SQL.Connection -> MonadDBT m ()) -> MonadDBT m ()
+write action = do
+    DBState conn activeTrans inTrans <- ask
+    case inTrans of
+        Nothing -> withMVar activeTrans $ action conn
+        Just transVar -> do
+            trans <- readMVar transVar
+            case trans of
+                Nothing -> error "Trying to write after transaction was closed"
+                Just writeCount ->
+                    bracket_
+                        (atomically $ modifyTVar (+ 1))
+                        (atomically $ modifyTVar (- 1))
+                        (action conn)
 
 -- Constants
 
@@ -155,18 +234,6 @@ fromSQLRevision (SQLRevision day revision state) = (day, revision, state)
 
 -------------------------------------------------------------------------------
 -- Write
-
-withTransaction :: (MonadMask m, MonadIO m) => Connection -> m a -> m a
-withTransaction (Connection conn) action = do
-    mask $ \restore -> do
-        begin
-        r <- restore action `onException` rollback
-        commit
-        return r
-    where
-        begin    = liftIO $ SQL.execute_ conn "BEGIN TRANSACTION"
-        commit   = liftIO $ SQL.execute_ conn "COMMIT TRANSACTION"
-        rollback = liftIO $ SQL.execute_ conn "ROLLBACK TRANSACTION"
 
 
 -- | Save the entire database
