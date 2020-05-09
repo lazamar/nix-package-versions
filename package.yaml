@@ -39,6 +39,7 @@ dependencies:
 - sqlite-simple
 - temporary
 - hspec
+- hspec-expectations
 - req
 - mtl
 - directory

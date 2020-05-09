@@ -9,11 +9,13 @@ module Main (main) where
 
 import Data.List (isPrefixOf)
 import Data.Time.Calendar (Day)
+import Data.Text (unpack)
 import Text.Read (readMaybe)
-import Nix.Versions.Types (DBFile(..),GitHubUser(..), CachePath(..), Config(..), Task(..))
-import Control.Monad (mapM_)
+import Nix.Versions.Types (DBFile(..),GitHubUser(..), CachePath(..), Config(..), Task(..), Commit(..), Hash(..))
+import Control.Monad (mapM_, when)
 import Control.Monad.Log2 (runLoggerT, inTerminal)
 import Control.Monad.Log (logInfo)
+import Control.Monad.IO.Class (MonadIO, liftIO)
 import Options.Applicative
     (info, option, auto, str, helper, switch, help, metavar, fullDesc, progDesc
     , header, long, showDefault, value, Parser, execParser, (<**>)
@@ -21,18 +23,25 @@ import Options.Applicative
 import Data.Semigroup ((<>))
 import System.Exit (exitFailure)
 import System.IO (hSetBuffering, stdout, BufferMode(..))
+import System.Posix.Files (fileExist, removeLink)
 import App.Server (Port(..))
 
 import qualified App.Server as Server
 import qualified Data.Map as Map
 import qualified Nix.Versions as V
+import qualified Nix.Revision as Revision
+import qualified Nix.Versions.Database as DB
 import qualified Data.ByteString.Char8 as B
 
 import Control.Monad.Revisions
 import Control.Monad.LimitedConc
+import System.TimeIt
+import UnliftIO (withRunInIO)
 
 main :: IO ()
 main = do
+  testDB
+  when False $ do
     CommandLineOptions{..} <- cliOptions
     if not cli_downloadVersions
         then runServer cli_port
@@ -48,20 +57,58 @@ main = do
 
     where
         -- | Run our monad stack
-        run = runLoggerT inTerminal
+        run (Config dbFile cacheDir _)
+            = runLoggerT inTerminal
             . runMonadLimitedConc (Map.fromList [(BuildNixRevision, 3), (SaveToDatabase, 1)])
             . runMonadRevisions
+            . DB.withConnection cacheDir dbFile
 
         downloadRevisions :: Day -> Day -> IO ()
         downloadRevisions from to = do
             hSetBuffering stdout LineBuffering
             config <- getConfig
-            run $ do
+            run config $ do
                 result <- V.savePackageVersionsForPeriod config from to
                 mapM_ (logInfo . show) result
 
-        runServer :: Port -> IO ()
-        runServer port = Server.run port =<< getConfig
+        --runServer :: Port -> IO ()
+        runServer port = do
+            config <- getConfig
+            run config $ Server.run port config
+
+
+testDB = do
+    (Config dbFile cacheDir _) <- getConfig
+    runLoggerT inTerminal
+        $ DB.withConnection cacheDir dbFile
+        $ do
+        exists <- withRunInIO $ \run -> do
+            timeItNamed "Remove commit from DB"
+                $ run
+                $ DB.removeRevisionsAndPackagesFrom commit
+            fileExist fileName
+        res <- if exists
+                  then do
+                      logInfo "Skipping revision download"
+                      return Nothing
+                  else Revision.downloadTo fileName commit
+        case res of
+            Just err -> do
+                logInfo $ "Failed to create revision " <> err
+                liftIO $ removeLink fileName
+
+            Nothing ->  do
+                Right packages <- Revision.loadFrom fileName
+                withRunInIO $ \run ->
+                    timeItNamed "Saving to database"
+                    $ run $ DB.saveRevisionWithPackages day revision packages
+    where
+        fileName = "./" <> unpack hash <> ".json"
+        -- | Create a temporary file without holding a lock to it.
+        hash = "b1273f24539a9b5f50d3086b4a9f4fc3bb6c0a50"
+        day = read "2018-02-05"
+        commit = Commit (Hash hash) day
+        revision = Revision.Revision Revision.Nixos_unstable commit
 
 -------------------------------------------------------------------------------------------
 -- CLI
