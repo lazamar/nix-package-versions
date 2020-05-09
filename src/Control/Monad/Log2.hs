@@ -2,6 +2,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -15,9 +16,11 @@ module Control.Monad.Log2
     , inTerminal
     ) where
 
-import Control.Monad.Log (MonadLog, Handler, WithSeverity(..), LoggingT(..), runLoggingT)
+import Control.Monad.Log (MonadLog, Handler, WithSeverity(..), LoggingT(..), runLoggingT, logMessage)
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.Conc.Class (MonadConc)
+import Control.Monad.IO.Class (MonadIO, liftIO)
+import System.CPUTime (getCPUTime)
 
 type LoggerT = LoggingT
 
@@ -33,3 +36,14 @@ inTerminal :: Handler IO (WithSeverity String)
 inTerminal = putStrLn . pretty
 
 deriving newtype instance MonadConc m => MonadConc (LoggingT messsage m)
+
+logTimed :: (MonadIO m , MonadLog (WithSeverity String) m) => WithSeverity String -> m a -> m a
+logTimed msg action = do
+    t1 <- liftIO getCPUTime
+    a <- action
+    t2 <- liftIO getCPUTime
+    let t :: Double
+        t = fromIntegral (t2-t1) * 1e-12
+        time = "[" <> show t <> "]"
+    logMessage $ (time <>) <$> msg
+    return a
