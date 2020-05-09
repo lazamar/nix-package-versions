@@ -78,6 +78,5 @@ data Commit = Commit Hash Day
 -- | Asynchronous tasks
 data Task
     = BuildNixRevision
-    | SaveToDatabase
     deriving (Show, Eq, Ord)
 

@@ -5,6 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 {-|
@@ -31,6 +32,8 @@ import Control.Concurrent.Classy.Async (mapConcurrently)
 import Control.Monad.Catch (MonadMask)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad (void)
+import Control.Monad.Log (MonadLog, WithSeverity(..))
+import Control.Monad.Log2 (logDebugTimed)
 import Data.Maybe (listToMaybe)
 import Data.Maybe (fromMaybe)
 import Data.String (fromString, IsString)
@@ -147,9 +150,11 @@ fromSQLRevision (SQLRevision day revision state) = (day, revision, state)
 
 
 -- | Save the entire database
-saveRevisionWithPackages :: (MonadConc m, MonadSQL m) => Day -> Revision -> RevisionPackages -> m ()
+saveRevisionWithPackages
+    :: (MonadIO m, MonadLog (WithSeverity String) m,MonadConc m, MonadSQL m)
+    => Day -> Revision -> RevisionPackages -> m ()
 saveRevisionWithPackages represents revision packages =
-    withTransaction $ do
+    withTransaction $ logDebugTimed "saveRevisionWithPackages" $ do
         saveRevision represents revision Incomplete
         saveVersions revision represents $ HashMap.elems packages
         saveRevision represents revision Success

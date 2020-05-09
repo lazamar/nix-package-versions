@@ -12,8 +12,9 @@ import Data.Time.Calendar (Day)
 import Data.Text (unpack)
 import Text.Read (readMaybe)
 import Nix.Versions.Types (DBFile(..),GitHubUser(..), CachePath(..), Config(..), Task(..), Commit(..), Hash(..))
-import Control.Monad (mapM_, when)
-import Control.Monad.Log2 (runLoggerT, inTerminal)
+import Control.Concurrent.Classy.Async (replicateConcurrently)
+import Control.Monad (mapM_, when, void)
+import Control.Monad.Log2 (runLoggerT, inTerminal, logInfoTimed)
 import Control.Monad.Log (logInfo)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Options.Applicative
@@ -59,7 +60,7 @@ main = do
         -- | Run our monad stack
         run (Config dbFile cacheDir _)
             = runLoggerT inTerminal
-            . runMonadLimitedConc (Map.fromList [(BuildNixRevision, 3), (SaveToDatabase, 1)])
+            . runMonadLimitedConc (Map.fromList [(BuildNixRevision, 3)])
             . runMonadRevisions
             . DB.withConnection cacheDir dbFile
 
@@ -79,19 +80,17 @@ main = do
 
 testDB = do
     (Config dbFile cacheDir _) <- getConfig
-    runLoggerT inTerminal
-        $ DB.withConnection cacheDir dbFile
-        $ do
-        exists <- withRunInIO $ \run -> do
-            timeItNamed "Remove commit from DB"
-                $ run
-                $ DB.removeRevisionsAndPackagesFrom commit
-            fileExist fileName
+    runLoggerT inTerminal $ DB.withConnection cacheDir dbFile $ do
+        logInfoTimed "Remove commit from DB"
+            $ DB.removeRevisionsAndPackagesFrom commit
+        exists <- liftIO $ fileExist fileName
         res <- if exists
-                  then do
-                      logInfo "Skipping revision download"
-                      return Nothing
-                  else Revision.downloadTo fileName commit
+                then do
+                    logInfo "Skipping revision download"
+                    return Nothing
+                else
+                    logInfoTimed "Revision download"
+                        $ Revision.downloadTo fileName commit
         case res of
             Just err -> do
                 logInfo $ "Failed to create revision " <> err
@@ -99,9 +98,9 @@ testDB = do
 
             Nothing ->  do
                 Right packages <- Revision.loadFrom fileName
-                withRunInIO $ \run ->
-                    timeItNamed "Saving to database"
-                    $ run $ DB.saveRevisionWithPackages day revision packages
+                logInfo "Saving to database"
+                DB.saveRevisionWithPackages day revision packages
+                logInfo "Done"
     where
         fileName = "./" <> unpack hash <> ".json"
         -- | Create a temporary file without holding a lock to it.

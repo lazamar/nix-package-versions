@@ -17,11 +17,11 @@ module Nix.Versions
 import Control.Arrow ((&&&))
 import Control.Concurrent.Classy.Async (mapConcurrently, forConcurrently)
 import Control.Monad.Conc.Class (MonadConc)
-import Control.Monad.LimitedConc (runTask, MonadLimitedConc)
 import Control.Monad.Fail (MonadFail)
 import Control.Monad.SQL (MonadSQL)
 import Control.Monad.IO.Class (MonadIO(..))
-import Control.Monad.Log (MonadLog, WithSeverity, logDebug, logInfo)
+import Control.Monad.Log (MonadLog, WithSeverity, logInfo)
+import Control.Monad.Log2 (logInfoTimed)
 import Data.Bifunctor (first)
 import Data.Hashable (Hashable)
 import Data.Set (Set)
@@ -29,7 +29,7 @@ import Data.Time.Calendar (Day, showGregorian)
 import Data.Time.Calendar.WeekDate (toWeekDate, fromWeekDate)
 import Nix.Revision (Revision(..), Channel(..), revisionsOn, RevisionPackages)
 import Nix.Versions.Database (RevisionState(..))
-import Nix.Versions.Types (Commit(..), Config(..), Task(..))
+import Nix.Versions.Types (Commit(..), Config(..))
 import Control.Monad.Revisions (MonadRevisions, packagesFor)
 
 import qualified Nix.Versions.Database as DB
@@ -40,7 +40,6 @@ import qualified Data.Map as Map
 -- between 'to' and 'from' dates and save them to the database.
 savePackageVersionsForPeriod ::
     ( MonadLog (WithSeverity String) m
-    , MonadLimitedConc Task m
     , MonadConc m
     , MonadFail m
     , MonadIO m
@@ -89,17 +88,15 @@ savePackageVersionsForPeriod (Config _ _ gitUser) from to = do
 -- result to the database and return some info about what was done
 saveToDatabase :: _ => Day -> Revision -> Either String RevisionPackages -> m (Either String String)
 saveToDatabase day revision ePackages =
-    runTask SaveToDatabase $ do
-        case ePackages  of
-            Left err -> do
-                logDebug $ msg $ "Saving invalid"
-                DB.saveRevision day revision InvalidRevision
-                return $ Left err
-            Right packages -> do
-                logInfo $ msg "Saving successful"
-                DB.saveRevisionWithPackages day revision packages
-                logInfo $ msg "Saved"
-                return $ Right $ msg "Success"
+    case ePackages  of
+        Left err -> do
+            logInfoTimed (msg "Saved invalid")
+                $ DB.saveRevision day revision InvalidRevision
+            return $ Left err
+        Right packages -> do
+            logInfoTimed (msg "Saved to DB")
+                $ DB.saveRevisionWithPackages day revision packages
+            return $ Right $ msg "Success"
     where
         Revision channel commit = revision
         Commit hash _ = commit
