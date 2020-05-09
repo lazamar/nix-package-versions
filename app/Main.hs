@@ -5,10 +5,12 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 
-module Main (main) where
+module Main (main, getConfig) where
 
 import Data.List (isPrefixOf)
 import Data.Time.Calendar (Day)
+import Data.Time.Clock.System (getSystemTime, systemToUTCTime)
+import Data.Time.Clock (UTCTime(..))
 import Data.Text (unpack)
 import Text.Read (readMaybe)
 import Nix.Versions.Types (DBFile(..),GitHubUser(..), CachePath(..), Config(..), Task(..), Commit(..), Hash(..))
@@ -119,15 +121,17 @@ data CommandLineOptions = CommandLineOptions
     deriving (Show, Eq)
 
 cliOptions :: IO CommandLineOptions
-cliOptions  = execParser $ info
-        (options  <**> helper)
+cliOptions  = do
+    today <- utctDay . systemToUTCTime <$> getSystemTime
+    execParser $ info
+        (options today <**> helper)
         (fullDesc
             <> progDesc "Serve information about older Nix package versions or download them"
             <> header "nix-package-versions - a server to search past versions of Nix packages"
         )
     where
-        options :: Parser CommandLineOptions
-        options = CommandLineOptions
+        options :: Day -> Parser CommandLineOptions
+        options today = CommandLineOptions
             <$> option (Port <$> auto)
                   ( long "port"
                   <> metavar "PORT"
@@ -148,7 +152,7 @@ cliOptions  = execParser $ info
             <*> option (readMaybe <$> str)
                   ( long "until"
                   <> help "The date to download data until. YYYY-MM-DD"
-                  <> value Nothing
+                  <> value (Just today)
                   <> metavar "DATE"
                   )
 
