@@ -2,6 +2,7 @@ module DatabaseSpec (spec) where
 
 import Control.Monad.SQL (MonadSQLT)
 import Control.Monad.IO.Class (MonadIO, liftIO)
+import Control.Monad.Log2 (runLoggerT, discard)
 import Data.Time.Calendar (Day(ModifiedJulianDay))
 import Nix.Revision (Revision(..), Package(..), Channel(..))
 import Nix.Versions.Types (DBFile(..), CachePath(..), Hash(..), Version(..), Name(..), Commit(..))
@@ -43,14 +44,14 @@ spec = do
             revision = Revision defaultChannel  commit
 
         it "can save and load a revision" $ do
-            overDatabase $ do
+            overDatabase $ runLoggerT discard $ do
                 () <- P.saveRevisionWithPackages day revision packages
                 v1 <- P.versions defaultChannel  pname
                 liftIO $ length v1 `shouldBe` 1
 
         -- We can add the same thing over and over again and we won't get duplicates
         it "Adding revisions is idempotent" $ do
-            overDatabase $ do
+            overDatabase $ runLoggerT discard $ do
                 () <- P.saveRevisionWithPackages day revision packages
                 v1 <- P.versions defaultChannel pname
                 () <- P.saveRevisionWithPackages day revision packages
@@ -59,7 +60,7 @@ spec = do
                 length v1 `shouldBe` 1
 
         it "Searching a package in a channel doesn't return results from a different channel" $ do
-            overDatabase $ do
+            overDatabase $ runLoggerT discard $ do
                 let otherPkg      = Package pname Nothing (Version "other-version") Nothing
                     otherChannel  = succ defaultChannel
                     otherCommit = Commit (Hash "otherHash") (ModifiedJulianDay 10)
@@ -78,7 +79,7 @@ spec = do
                 pkg `shouldNotBe` otherPkg
 
         it "When inserting the same package version with a more recent revision, the record is overriden" $ do
-            overDatabase $ do
+            overDatabase $ runLoggerT discard $ do
                 let newDay = succ day
                     Commit hash _ = commit
 
@@ -90,7 +91,7 @@ spec = do
                 v2 `shouldBe` [(pkg, hash, newDay)]
 
         it "When inserting the same package version with an older revision, the record is not overriden" $ do
-            overDatabase $ do
+            overDatabase $ runLoggerT discard $ do
                 let newDay = succ day
                     Commit hash _ = commit
 

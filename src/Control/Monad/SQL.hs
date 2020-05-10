@@ -15,10 +15,10 @@ import Control.Concurrent.Classy.MVar (MVar, withMVar, newMVar, swapMVar)
 import Control.Monad.Catch (MonadMask, mask, onException, finally)
 import Control.Monad.Conc.Class (MonadConc)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Monad.Reader (ReaderT, local, ask, reader, runReaderT)
-import Control.Monad.Trans.Class (MonadTrans, lift)
+import Control.Monad.Log (LoggingT(..))
+import Control.Monad.Reader (ReaderT(..), local, ask, reader, runReaderT)
+import Control.Monad.Trans.Class (lift)
 import Database.SQLite.Simple (ToRow, FromRow, NamedParam, Query)
-import UnliftIO (askUnliftIO, MonadUnliftIO, unliftIO)
 
 import qualified Database.SQLite.Simple as SQL
 
@@ -31,23 +31,14 @@ class Monad m => MonadSQL m where
     queryNamed :: FromRow r => Query -> [NamedParam] -> m [r]
     withTransaction :: m a -> m a
 
--- | Pass through instance
-instance {-# OVERLAPPABLE #-}
-    ( MonadUnliftIO (t m)
-    , Monad (t m)
-    , MonadIO m
-    , MonadTrans t
-    , MonadSQL m
-    ) => MonadSQL (t m) where
-    execute  q v = lift $ execute q v
-    execute_ q   = lift $ execute_ q
-    query    q v = lift $ query q v
-    query_   q   = lift $ query_ q
-    queryNamed q v = lift $ queryNamed q v
-    withTransaction a = do
-        u <- askUnliftIO
-        lift $ withTransaction $ liftIO $ unliftIO u a
-
+instance (MonadSQL m) => MonadSQL (LoggingT msg m) where
+     execute  q v = lift $ execute q v
+     execute_ q   = lift $ execute_ q
+     query    q v = lift $ query q v
+     query_   q   = lift $ query_ q
+     queryNamed q v = lift $ queryNamed q v
+     withTransaction (LoggingT (ReaderT f)) =
+         LoggingT $ ReaderT $ \r -> withTransaction $ f r
 
 runMonadSQL :: (MonadConc m, MonadIO m) => FilePath -> MonadSQLT m a -> m a
 runMonadSQL path m = do
@@ -55,7 +46,7 @@ runMonadSQL path m = do
     writeLock <- newMVar True
     let state = DBState conn writeLock
     finally
-        (flip runReaderT state m)
+        (runReaderT m state)
         (liftIO $ SQL.close conn)
 
 data DBState m = DBState

@@ -14,6 +14,7 @@ module Control.Monad.Log2
     , runLoggerT
     , pretty
     , inTerminal
+    , discard
     , logInfoTimed
     , logDebugTimed
     ) where
@@ -37,6 +38,9 @@ pretty (WithSeverity severity msg) = unwords [ "[", show severity, "]", msg ]
 
 inTerminal :: Handler IO (WithSeverity String)
 inTerminal = putStrLn . pretty
+
+discard :: Monad m => Handler m (WithSeverity String)
+discard   = const $ return ()
 
 deriving newtype instance MonadConc m => MonadConc (LoggingT messsage m)
 
