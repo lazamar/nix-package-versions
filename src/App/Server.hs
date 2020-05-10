@@ -70,15 +70,15 @@ pageHome request = do
             H.title "Nix Package Versions"
             H.link
                 ! A.rel "shortcut icon"
-                ! A.href "https://nixos.wiki/xfavicon.png.pagespeed.ic.Yz0KSD8dq8.webp"
+                ! A.href favicon
             H.link
                 ! A.rel "icon"
                 ! A.type_ "image/webp"
-                ! A.href "https://nixos.wiki/xfavicon.png.pagespeed.ic.Yz0KSD8dq8.webp"
+                ! A.href favicon
             H.link
                 ! A.rel "apple-touch-icon"
                 ! A.type_ "image/webp"
-                ! A.href "https://nixos.wiki/xfavicon.png.pagespeed.ic.Yz0KSD8dq8.webp"
+                ! A.href favicon
             H.link
                 ! A.rel "stylesheet"
                 ! A.href "https://unpkg.com/purecss@1.0.1/build/pure-min.css"
@@ -280,6 +280,9 @@ pageHome request = do
             = S.formatHtmlBlock S.defaultFormatOpts
             . fromRight []
             . S.tokenize (S.TokenizerConfig S.defaultSyntaxMap False) nixSyntax
+
+favicon :: H.AttributeValue
+favicon = "data:image/webp;base64,UklGRmACAABXRUJQVlA4TFQCAAAvD8ADEE/loI0kR3LP5XsED+75c4hNw2HbtoFEp70b4Cf6/We61g4iSZKU7LkXDGAFTfiP+JmBGwBgoujiCe7uLh09GzAEFYOwAoswAq3TuTu8u5wGpHZA8gCv/x2d76WyjJ/2uplZ1N6NLutZSciT+p4sIpkxeSNy5OnfP23b/tek9btMf3yPTo0+WT7bme77yM+st6hJYosl+cYjI0cZsAMnUQkDBAYFILCGgwY7OCCCYMAwg8AKE6JwtG0gAUSZExIMxpiJY9LGtr4fx95XzRb8nl/r/f3I724izL9nVGn39zPK/I5QAm79im7kL2KVZ+j5u/Ufb/QZ8axNYJF+2/uzwX1tTRO0TMEktW0vFozCW5CFmuYXHmFDWZjSGDOQU/aAIxIEOCxgSMNWIyMDVBTmq7CaOPwRDAwSAFHwBDXosEUMUCAAYFAAoMBBixUQHABBwCTfv/ZHO7P/nUWoT1LscP21uxnSjq1oS9LdujWAAJLo25tqRM0t9/ms34AgSbJpq59t29Y337dt2zbet23b/uv0EiL6PwH4z1CTGsNbg6drfd/5jMXUj9fn8eXzL47gCH++UlG+OH8DtxPwxtvMhVyRpHammx4VBHiys6oq05nkmpa7TGsYLt4JPa33TUDHQ11Sotc1NjE13dYJAA1pefrY6NHA0kIF5QtLwC8qidk9eLoslXIAkkzMINK0GNi4lgszGruqU1KvzvaB45FPNi+5vrl9dn3z5RDY2YOqQFf2eDsXGDrZBgCNwZ8Ql/s2uXKEb3MsIeH2SPSu9n/3Rw=="
 
 pageNotFound :: Response
 pageNotFound = responseLBS
