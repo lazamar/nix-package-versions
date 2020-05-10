@@ -44,7 +44,6 @@ class MonadRevisions m where
     packagesFor :: Commit -> m (Either BuildError RevisionPackages)
 
 -- | Pass through instance
--- This is only OK because we don't change the Reader environment
 instance {-# OVERLAPPABLE #-} (MonadRevisions m, MonadTrans t, Monad m) => MonadRevisions (t m) where
     packagesFor  = lift . packagesFor
 
