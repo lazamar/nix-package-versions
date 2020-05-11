@@ -14,12 +14,11 @@ import Data.Time.Clock (UTCTime(..))
 import Data.Text (unpack)
 import Text.Read (readMaybe)
 import Nix.Versions.Types (DBFile(..),GitHubUser(..), CachePath(..), Config(..), Task(..), Commit(..), Hash(..))
-import Control.Concurrent.Classy.Async (replicateConcurrently)
-import Control.Monad (mapM_, when, void)
+import Control.Monad (mapM_)
 import Control.Monad.Conc.Class (getNumCapabilities)
 import Control.Monad.Log2 (runLoggerT, inTerminal, logInfoTimed)
 import Control.Monad.Log (logInfo)
-import Control.Monad.IO.Class (MonadIO, liftIO)
+import Control.Monad.IO.Class (liftIO)
 import Options.Applicative
     (info, option, auto, str, helper, switch, help, metavar, fullDesc, progDesc
     , header, long, showDefault, value, Parser, execParser, (<**>)
@@ -39,8 +38,6 @@ import qualified Data.ByteString.Char8 as B
 
 import Control.Monad.Revisions
 import Control.Monad.LimitedConc
-import System.TimeIt
-import UnliftIO (withRunInIO)
 
 main :: IO ()
 main = do

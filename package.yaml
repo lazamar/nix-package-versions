@@ -54,6 +54,7 @@ dependencies:
 - optparse-applicative
 - skylighting
 - unliftio
+- monad-control
 
 library:
   source-dirs: src

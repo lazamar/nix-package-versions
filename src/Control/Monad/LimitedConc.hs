@@ -22,16 +22,14 @@ from Nix we will exhaust the computer's resources and crash.
 
 import Control.Concurrent.Classy.Async (async, Async)
 import Control.Monad.Trans.Reader (ReaderT, reader, runReaderT)
-import Control.Monad.Trans.Class (MonadTrans, lift)
+import Control.Monad.Trans.Control (liftWith)
 import Control.Monad.Catch (finally)
 import Control.Monad.Conc.Class (MonadConc, STM, atomically)
 import Control.Monad.STM.Class (retry)
-import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Concurrent.Classy.MVar (MVar, modifyMVar, newMVar)
 import Control.Concurrent.Classy.STM.TVar (TVar, newTVar, readTVar, modifyTVar)
 import Data.Map (Map)
 import Data.Maybe (fromMaybe)
-import UnliftIO (askUnliftIO, MonadUnliftIO, unliftIO)
 
 import qualified Data.Map as Map
 
@@ -42,17 +40,8 @@ class MonadConc m => MonadLimitedConc k m | m -> k where
     {-# MINIMAL runTask #-}
 
 -- | Pass-through instance
-instance {-# OVERLAPPABLE #-}
-    ( MonadUnliftIO (t m)
-    , MonadConc (t m)
-    , MonadIO m
-    , MonadLimitedConc k m
-    , MonadTrans t
-    , STM m ~ STM (t m)
-    ) => MonadLimitedConc k (t m) where
-    runTask k action = do
-        u <- askUnliftIO
-        lift $ runTask k $ liftIO $ unliftIO u $ action
+instance {-# OVERLAPPABLE #-} (MonadLimitedConc k m) => MonadLimitedConc k (ReaderT r m) where
+    runTask k action = liftWith (\run -> runTask k $ run action)
 
 data ConcState m k = ConcState
     { conc_limits :: Map k Int
@@ -66,7 +55,7 @@ runMonadLimitedConc limits r = do
     usedMapVar <- newMVar mempty
     runReaderT r ConcState { conc_limits = limits , conc_used = usedMapVar }
 
-instance (Ord k, MonadConc m, MonadIO m) => MonadLimitedConc k (LimitedConcT k m) where
+instance (Ord k, MonadConc m ) => MonadLimitedConc k (LimitedConcT k m) where
     runTask key task = do
         limits <- reader conc_limits
         let maxThreads = fromMaybe maxBound $ Map.lookup key limits

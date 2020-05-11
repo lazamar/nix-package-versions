@@ -33,7 +33,6 @@ import Data.Text (Text, pack, unpack)
 import Nix.Versions.Types (Hash(..), Commit(..), Task(..))
 import Nix.Revision (RevisionPackages)
 import System.IO.Temp (emptyTempFile, withSystemTempDirectory)
-import UnliftIO (MonadUnliftIO)
 
 import qualified Data.Map as Map
 import qualified Nix.Revision as Revision
@@ -72,8 +71,7 @@ data RevisionsState m = RevisionsState
 type RevisionsT m = ReaderT (RevisionsState m) m
 
 instance
-    ( MonadUnliftIO m
-    , MonadConc m
+    ( MonadConc m
     , MonadIO m
     , MonadLimitedConc Task m
     , MonadLog (WithSeverity String) m
