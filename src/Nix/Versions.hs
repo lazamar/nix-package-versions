@@ -49,15 +49,17 @@ savePackageVersionsForPeriod ::
     => Config -> Day -> Day -> m [Either String String]
 savePackageVersionsForPeriod (Config _ _ gitUser) from to = do
     daysToDownload <- forConcurrently [minBound..] $ \channel -> do
-        days <- daysNeededFor channel
-        return $ (channel,) <$> days
-    results <- mapConcurrently (uncurry $ buildAndSaveDay) $ concat daysToDownload
+        dbRevisions <- DB.revisions channel
+        let days = daysMissingIn dbRevisions
+            completed = completedRevisions dbRevisions
+        return $ (channel, completed,) <$> days
+    results <- mapConcurrently buildAndSaveDay $ concat daysToDownload
     return $ concat results
     where
         maxAttempts = 10
 
-        buildAndSaveDay :: _ => Channel -> Day -> m [Either String String]
-        buildAndSaveDay channel day = do
+        buildAndSaveDay :: _ => (Channel, Set Revision, Day) -> m [Either String String]
+        buildAndSaveDay (channel, completed, day) = do
             revisionsOn gitUser channel day >>= \case
                 Left err -> return $ [Left err]
                 Right dayRevisions ->
@@ -65,18 +67,17 @@ savePackageVersionsForPeriod (Config _ _ gitUser) from to = do
                     tryInSequence
                         $ fmap (\r -> saveToDatabase day r =<< download r)
                         $ take maxAttempts
+                        $ filter (not . (`Set.member` completed))
                         $ dayRevisions
 
         download :: _ => Revision -> m (Either String RevisionPackages)
         download (Revision _ commit) = first show <$> packagesFor commit
 
-        daysNeededFor :: _ => Channel -> m [Day]
-        daysNeededFor channel = do
-            dbRevisions <- DB.revisions channel
-            return
-                $ fmap toMonday
-                $ Set.toList
-                $ weeksAsked  `Set.difference` weeksCompleted  maxAttempts dbRevisions
+        daysMissingIn  :: [(Day, Revision, RevisionState)] -> [Day]
+        daysMissingIn revisions
+            = fmap toMonday
+            $ Set.toList
+            $ weeksAsked  `Set.difference` weeksCompleted  maxAttempts revisions
 
         weeksAsked :: Set (Year, Week)
         weeksAsked
@@ -102,6 +103,19 @@ saveToDatabase day revision ePackages =
         Commit hash _ = commit
         padded = take 20 . (<> repeat ' ')
         msg txt = unwords [padded txt, showGregorian day, show channel, show hash]
+
+completedRevisions :: [(Day, Revision, RevisionState)] -> Set Revision
+completedRevisions
+    = Set.fromList
+    . map (\(_,rev,_) -> rev)
+    . filter (\(_,_,state) -> isComplete state)
+    where
+        isComplete state =
+            case state of
+              Success         -> True
+              InvalidRevision -> True
+              PreDownload     -> False
+              Incomplete      -> False
 
 -- | Given a list of revisions successfully or unsuccessfully downloaded
 -- return a list of weeks for which we shouldn't try to download revisions
