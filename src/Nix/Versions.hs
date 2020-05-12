@@ -15,7 +15,7 @@ module Nix.Versions
     ) where
 
 import Control.Arrow ((&&&))
-import Control.Concurrent.Classy.Async (mapConcurrently, forConcurrently, wait, async)
+import Control.Concurrent.Classy.Async (forConcurrently, wait, async)
 import Control.Concurrent.Classy.STM.TVar (newTVar, readTVar, writeTVar)
 import Control.Monad (foldM)
 import Control.Monad.Catch (finally)

@@ -7,10 +7,11 @@
 
 module App.Main (main, getConfig, run) where
 
+import Data.Either (isRight, isLeft)
 import Data.List (isPrefixOf)
-import Data.Time.Calendar (Day)
+import Data.Time.Calendar (Day, showGregorian)
 import Data.Time.Clock.System (getSystemTime, systemToUTCTime)
-import Data.Time.Clock (UTCTime(..))
+import Data.Time.Clock (UTCTime(..), getCurrentTime)
 import Data.Text (unpack)
 import Text.Read (readMaybe)
 import Nix.Versions.Types (DBFile(..),GitHubUser(..), CachePath(..), Config(..), Task(..), Commit(..), Hash(..))
@@ -60,8 +61,16 @@ main = do
             hSetBuffering stdout LineBuffering
             config <- getConfig
             run config inTerminal $ do
-                result <- V.savePackageVersionsForPeriod config from to
+                result <- logInfoTimed "savePackageVersionsForPeriod" $ V.savePackageVersionsForPeriod config from to
                 mapM_ (logInfo . show) result
+                now <- liftIO $ getCurrentTime
+                logInfo $ unlines
+                    [ ""
+                    , show now
+                    , "Saved package versions from " <> showGregorian from <> " to " <> showGregorian to
+                    , "Successes: " <> show (length $ filter isRight result)
+                    , "Failures:  " <> show (length $ filter isLeft result)
+                    ]
 
         --runServer :: Port -> IO ()
         runServer port = do
