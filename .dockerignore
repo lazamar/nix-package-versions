@@ -2,3 +2,5 @@
 saved-versions
 Dockerfile
 .git
+.gitignore
+build-linux.sh

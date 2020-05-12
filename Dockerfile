@@ -30,4 +30,4 @@ RUN curl https://nixos.org/nix/install | sh
 # nix manages our $PATH appropriately.
 RUN . .nix-profile/etc/profile.d/nix.sh && nix-channel --update
 RUN echo '. .nix-profile/etc/profile.d/nix.sh' >> ~/.bashrc
-
+RUN stack build

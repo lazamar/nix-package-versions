@@ -2,12 +2,12 @@
 nix-package-versions.cabal
 *~
 saved-versions
+build
 
 # SQLite Databases
 *.db
 tags
 .env
-
 
 # Annoying mac files
 .DS_Store
