@@ -15,13 +15,17 @@ module Nix.Versions
     ) where
 
 import Control.Arrow ((&&&))
-import Control.Concurrent.Classy.Async (mapConcurrently, forConcurrently)
-import Control.Monad.Conc.Class (MonadConc)
+import Control.Concurrent.Classy.Async (mapConcurrently, forConcurrently, wait, async)
+import Control.Concurrent.Classy.STM.TVar (newTVar, readTVar, writeTVar)
+import Control.Monad (foldM)
+import Control.Monad.Catch (finally)
+import Control.Monad.Conc.Class (MonadConc, atomically)
 import Control.Monad.Fail (MonadFail)
 import Control.Monad.SQL (MonadSQL)
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Log (MonadLog, WithSeverity)
 import Control.Monad.Log2 (logInfoTimed)
+import Control.Monad.STM.Class (retry)
 import Data.Bifunctor (first)
 import Data.Hashable (Hashable)
 import Data.Set (Set)
@@ -53,7 +57,7 @@ savePackageVersionsForPeriod (Config _ _ gitUser) from to = do
         let days = daysMissingIn dbRevisions
             completed = completedRevisions dbRevisions
         return $ (channel, completed,) <$> days
-    results <- mapConcurrently buildAndSaveDay $ concat daysToDownload
+    results <- limitedConcurrency 10 $ fmap buildAndSaveDay $ concat daysToDownload
     return $ concat results
     where
         maxAttempts = 10
@@ -165,3 +169,34 @@ tryInSequence values = go [] values
 -- We only download revision data for the weeks of interest
 isWeekOfInterest :: Week -> Bool
 isWeekOfInterest (Week week) = week `mod` 5 == 1
+
+-- | Run the maximum amount of concurrent computations possible, but no more than that.
+--
+-- Even though we are limiting the number of threads actively downloading
+-- data from nix at any one time, if many threads are trying to write to
+-- the database, they will all load the nix data from disk into memory
+-- without sharing and be blocked in the queue. This was causing crazy
+-- memory usage. Using limitedConcurrency is a simple fix
+limitedConcurrency :: MonadConc m => Int -> [m a] -> m [a]
+limitedConcurrency maxConcurrency actions = do
+    activeThreads <- atomically $ newTVar 0
+    let
+        takeSlot = atomically $ do
+            active <- readTVar activeThreads
+            if active < maxConcurrency
+               then writeTVar activeThreads (active + 1)
+               else retry
+
+        releaseSlot = atomically $ do
+            active <- readTVar activeThreads
+            writeTVar activeThreads (active - 1)
+
+        -- | Only run the next action if there is an idle CPU core
+        runWhenPossible acc action = do
+            takeSlot
+            a <- async $ finally action releaseSlot
+            return $ a:acc
+
+    asyncs <- foldM runWhenPossible [] actions
+    traverse wait asyncs
+
