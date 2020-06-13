@@ -254,7 +254,7 @@ pageHome request = do
                         H.td $ toMarkup $ fromHash hash
 
                 H.p $ "Install " <> H.code (toMarkup name) <> " with " <> H.code "nix-env" <> "."
-                nixCodeBlock $ "nix-env -qaP " <> name <> " -f " <> revisionURL hash
+                nixCodeBlock $ "nix-env -i " <> name <> " -f " <> revisionURL hash
 
                 H.p $ "Use " <> H.code (toMarkup name) <> " in a " <> H.code "nix-shell" <> "."
                 nixCodeBlock $ "nix-shell -p " <> name <> " -I nixpkgs=" <> revisionURL hash
