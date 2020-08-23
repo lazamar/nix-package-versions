@@ -281,7 +281,7 @@ pageHome request = do
                         , "         rev = \""<> fromHash hash <> "\";                                           "
                         , "     }) {};                                                                           "
                         , ""
-                        , "     myPkg = pkgs." <> name
+                        , "     myPkg = pkgs." <> name <> ";"
                         , "in"
                         , "..."
                         ]
