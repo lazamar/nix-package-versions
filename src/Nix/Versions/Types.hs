@@ -6,6 +6,8 @@
 -}
 module Nix.Versions.Types
     ( Name(..)
+    , FullName(..)
+    , KeyName(..)
     , Version(..)
     , Hash(..)
     , Channel(..)
@@ -54,15 +56,25 @@ data Channel
     | UnstableNixOS
     | UnstableNixPkgs
 
+-- | The name of the key in the nixpkgs expression that identifies the package.
+newtype KeyName = KeyName { fromKeyName :: Text }
+    deriving (Show, Eq, Generic)
+    deriving newtype (Hashable, FromJSON, FromJSONKey, ToJSON, ToJSONKey)
+
+-- | Usually name + version. Used to install a package with "nix-env -i"
+newtype FullName = FullName { fromFullName :: Text }
+    deriving (Show, Eq, Generic)
+    deriving newtype (Hashable, FromJSON, ToJSON)
+
 --  | The name of package. e.g. nodejs
 newtype Name = Name { fromName :: Text }
     deriving (Show, Eq, Generic)
-    deriving newtype (Hashable, FromJSON, FromJSONKey, ToJSON, ToJSONKey)
+    deriving newtype (Hashable, FromJSON, ToJSON)
 
 -- | A package version. e.g. v8.10-rc2
 newtype Version = Version { fromVersion :: Text }
     deriving (Show, Eq, Generic)
-    deriving newtype (Monoid, Semigroup, FromJSON, FromJSONKey, ToJSON, ToJSONKey, Hashable)
+    deriving newtype (Monoid, Semigroup, FromJSON, ToJSON, Hashable)
 
 -- | A commit hash
 newtype Hash = Hash { fromHash :: Text }

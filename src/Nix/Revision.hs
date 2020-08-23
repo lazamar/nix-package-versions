@@ -19,7 +19,7 @@ module Nix.Revision
     , revisionsOn
     , channelBranch
     , Revision(..)
-    , RevisionPackages
+    , RevisionPackages(..)
     , Package(..)
     , Channel(..)
     , GitBranch(..)
@@ -35,11 +35,12 @@ import Data.HashMap.Strict (HashMap)
 import Data.Text (unpack, Text)
 import Data.Time.Calendar (Day, showGregorian)
 import GHC.Generics (Generic)
-import Nix.Versions.Types (GitHubUser(..), Hash(..), Name(..), Version(..), Commit(..))
+import Nix.Versions.Types (GitHubUser(..), Hash(..), KeyName(..), FullName(..), Name(..), Version(..), Commit(..))
 import System.Exit (ExitCode(..))
 import System.Process (readCreateProcessWithExitCode, shell, CreateProcess(..))
 
 import qualified Network.HTTP.Req as Req
+import qualified Data.HashMap.Strict as HMap
 
 -- | A Nix distribution channel.
 -- These are the channels we care about. There are many other channels that
@@ -74,27 +75,54 @@ data Revision = Revision
     , commit   :: Commit
     } deriving (Show, Generic, Ord, Eq)
 
-type RevisionPackages = HashMap Name Package
+type RevisionPackages = [Package]
 
 -- | The information we have about a nix package in one revision
 data Package = Package
     { name :: Name
+    --, keyName :: KeyName
+    --, fullName :: FullName
     , description :: Maybe Text
     , version :: Version
     , nixpkgsPath :: Maybe FilePath
     } deriving (Show, Generic, Eq)
 
-instance FromJSON Package where
-    parseJSON = withObject "Package" $ \v -> Package
+data RawPackage = RawPackage
+    { raw_name :: Name
+    , raw_fullName :: FullName
+    , raw_description :: (Maybe Text)
+    , raw_version :: Version
+    , raw_nixpkgsPath :: (Maybe FilePath)
+    }
+
+instance FromJSON RawPackage where
+    parseJSON = withObject "RawPackage" $ \v -> RawPackage
        <$> (v .: "pname" <&> Name)
+       <*> (v .: "name" <&> FullName)
        <*> (v .: "meta" >>= (.:? "description"))
-       <*>  v .:  "version"
+       <*> (v .: "version" <&> Version)
        <*> (v .: "meta" >>= (.:? "position"))
 
+-- | Load data from a json file created with downloadTo
 loadFrom :: MonadIO m => FilePath -> m (Either String RevisionPackages)
-loadFrom path = liftIO $ handle exceptionToEither $ eitherDecodeFileStrict path
+loadFrom path = liftIO
+    $ fmap (fmap toRevisionPackages)
+    $ handle exceptionToEither
+    $ eitherDecodeFileStrict path
     where
         exceptionToEither (SomeException err) = return $ Left $ show err
+
+        toRevisionPackages :: HashMap KeyName RawPackage -> [Package]
+        toRevisionPackages = map toPackage . HMap.toList
+
+        toPackage :: (KeyName, RawPackage) -> Package
+        toPackage (key, RawPackage name fullName description version nixpkgsPath) =
+            Package
+                name
+                description
+                version
+                nixpkgsPath
+
 
 -- | Download info for a revision and build a list of all
 -- packages in it. This can take a few minutes.

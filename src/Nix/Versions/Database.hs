@@ -157,7 +157,7 @@ saveRevisionWithPackages
 saveRevisionWithPackages represents revision packages =
     withTransaction $ logDebugTimed "saveRevisionWithPackages" $ do
         saveRevision represents revision Incomplete
-        saveVersions revision represents $ HashMap.elems packages
+        saveVersions revision represents packages
         saveRevision represents revision Success
 
 -- | When there is a problem building the revision this function allows us
