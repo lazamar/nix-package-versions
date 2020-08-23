@@ -5,8 +5,8 @@ import Control.Monad.SQL (MonadSQLT)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Log2 (runLoggerT, discard)
 import Data.Time.Calendar (Day(ModifiedJulianDay))
-import Nix.Revision (Revision(..), Package(..), Channel(..))
-import Nix.Versions.Types (DBFile(..), CachePath(..), Hash(..), Version(..), Name(..), Commit(..), GitHubUser(..), Config(..))
+import Nix.Revision (Revision(..), Package(..), Channel(..), RevisionPackages)
+import Nix.Versions.Types (DBFile(..), CachePath(..), Hash(..), Version(..), KeyName(..), FullName(..), Name(..), Commit(..), GitHubUser(..), Config(..))
 import System.IO.Temp (withSystemTempDirectory)
 import Test.Hspec (Spec, describe, it)
 import Test.Hspec.Expectations (HasCallStack)
@@ -39,9 +39,11 @@ spec :: Spec
 spec = do
     describe "Database" $ do
         let pname = Name "my-package"
-            pkg   = Package pname Nothing (Version "1.0") Nothing
+            keyName = KeyName "my-package"
+            fullName = FullName "my-package"
+            pkg   = Package pname (Version "1.0") keyName fullName Nothing Nothing
             commit = Commit (Hash "hash") (ModifiedJulianDay 10)
-            packages = HM.fromList [(pname, pkg)]
+            packages = [pkg]
             revision = Revision defaultChannel  commit
 
         it "can save and load a revision" $ do
@@ -62,11 +64,11 @@ spec = do
 
         it "Searching a package in a channel doesn't return results from a different channel" $ do
             overDatabase $ runLoggerT discard $ do
-                let otherPkg      = Package pname Nothing (Version "other-version") Nothing
+                let otherPkg      = Package pname (Version "other-version") keyName fullName Nothing  Nothing
                     otherChannel  = succ defaultChannel
                     otherCommit = Commit (Hash "otherHash") (ModifiedJulianDay 10)
                     otherRevision = Revision otherChannel otherCommit
-                    otherPackages = HM.fromList [(pname, otherPkg)]
+                    otherPackages = [otherPkg]
 
                 -- Even though the packages have the same name,
                 -- because they point to revisions with different commits

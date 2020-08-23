@@ -23,7 +23,7 @@ import Data.Time.Calendar (Day, showGregorian)
 import Network.HTTP.Types (status200, status404, renderQuery, queryTextToQuery)
 import Network.Wai (Application, Request, Response, responseLBS, rawPathInfo, queryString)
 import Nix.Revision (Package(..), Channel(..), GitBranch(..), channelBranch)
-import Nix.Versions.Types (Hash(..), Version(..), Config(..), Name(..))
+import Nix.Versions.Types (Hash(..), Version(..), Config(..), Name(..), KeyName(..), FullName(..))
 import Text.Blaze.Html.Renderer.Utf8 (renderHtml)
 import Text.Blaze.Html5 ((!))
 import Text.Blaze (toValue, toMarkup)
@@ -136,6 +136,8 @@ pageHome request = do
                     $ installationInstructions
                         <$> mSearchedPackage
                         <*> mSelectedVersion
+                        <*> mSelectedKeyName
+                        <*> mSelectedFullName
                         <*> mSelectedChannel
                         <*> mSelectedRevision
 
@@ -174,8 +176,10 @@ pageHome request = do
         nixSyntax :: S.Syntax
         nixSyntax = fromJust $ S.lookupSyntax "nix" S.defaultSyntaxMap
 
-        versionKey, pkgKey, channelKey, revisionKey, instructionsAnchor :: IsString a => a
+        versionKey, keyNameKey, fullNameKey, pkgKey, channelKey, revisionKey, instructionsAnchor :: IsString a => a
         versionKey = "version"
+        keyNameKey = "keyName"
+        fullNameKey = "fullName"
         pkgKey = "package"
         channelKey = "channel"
         revisionKey = "revision"
@@ -193,6 +197,9 @@ pageHome request = do
 
         mSelectedRevision = Hash <$> queryValueFor revisionKey
 
+        mSelectedFullName = FullName <$> queryValueFor fullNameKey
+
+        mSelectedKeyName = KeyName <$> queryValueFor keyNameKey
         mSelectedVersion = Version <$> queryValueFor versionKey
 
         queryValueFor key
@@ -218,34 +225,36 @@ pageHome request = do
                        else mapM_ (toRow channel) $ zip [0..] results
 
         toRow :: Channel -> (Int, (Package, Hash, Day)) -> H.Html
-        toRow channel (ix, (Package name v@(Version version) _ _ _ _, hash, day)) =
+        toRow channel (ix, (package, hash, day)) =
             H.tr
                 ! (if odd ix then A.class_ "pure-table-odd" else mempty)
                 $ do
-                H.td $ H.text $ fromName name
-                H.td $ H.text version
+                H.td $ H.text $ fromName $ name package
+                H.td $ H.text $ fromVersion $ version package
                 H.td $ H.a
-                    ! A.href (toValue $ revisionLink channel name v hash)
+                    ! A.href (toValue $ revisionLink channel hash package)
                     ! A.title "Click for installation instructions"
                     $ H.text $ fromHash hash
                 H.td $ toMarkup $ showGregorian day
 
-        revisionLink :: Channel -> Name -> Version -> Hash -> Text.Text
-        revisionLink  channel (Name name) (Version version) (Hash hash) =
+        revisionLink :: Channel -> Hash -> Package -> Text.Text
+        revisionLink  channel (Hash hash) Package{name,version,fullName,keyName} =
             "./" <> query <> "#" <> instructionsAnchor
             where
                 query
                     = decodeUtf8
                     $ renderQuery True
                     $ queryTextToQuery
-                        [ (pkgKey, Just name)
-                        , (versionKey, Just version)
+                        [ (pkgKey, Just $ fromName name)
+                        , (versionKey, Just $ fromVersion version)
+                        , (fullNameKey, Just $ fromFullName fullName)
+                        , (keyNameKey, Just $ fromKeyName keyName)
                         , (revisionKey, Just hash)
                         , (channelKey, Just $ toChannelBranch channel)
                         ]
 
-        installationInstructions :: Name -> Version -> Channel -> Hash -> H.Html
-        installationInstructions (Name name) (Version version) channel hash =
+        installationInstructions :: Name -> Version -> KeyName -> FullName -> Channel -> Hash -> H.Html
+        installationInstructions (Name name) (Version version) (KeyName keyName) (FullName fullName) channel hash =
             H.div
                 ! A.id instructionsAnchor
                 $ do
@@ -264,13 +273,13 @@ pageHome request = do
                         H.th "Revision"
                         H.td $ toMarkup $ fromHash hash
 
-                H.p $ "Install " <> H.code (toMarkup installName) <> " with " <> H.code "nix-env" <> "."
-                nixCodeBlock $ "nix-env -i " <> installName <> " -f " <> revisionURL hash
+                H.p $ "Install " <> H.code (toMarkup name) <> " with " <> H.code "nix-env" <> "."
+                nixCodeBlock $ "nix-env -i " <> fullName <> " -f " <> revisionURL hash
 
-                H.p $ "Use " <> H.code (toMarkup installName) <> " in a " <> H.code "nix-shell" <> "."
-                nixCodeBlock $ "nix-shell -p " <> installName <> " -I nixpkgs=" <> revisionURL hash
+                H.p $ "Use " <> H.code (toMarkup keyName) <> " in a " <> H.code "nix-shell" <> "."
+                nixCodeBlock $ "nix-shell -p " <> fullName <> " -I nixpkgs=" <> revisionURL hash
 
-                H.p $ "Use " <> H.code (toMarkup installName) <> " in a nix script"
+                H.p $ "Use " <> H.code (toMarkup name) <> " in a nix script"
                 nixCodeBlock $ Text.unlines
                         [ "let"
                         , "     pkgs = import (builtins.fetchGit {"
@@ -281,13 +290,10 @@ pageHome request = do
                         , "         rev = \""<> fromHash hash <> "\";                                           "
                         , "     }) {};                                                                           "
                         , ""
-                        , "     myPkg = pkgs." <> name <> ";"
+                        , "     myPkg = pkgs." <> keyName <> ";"
                         , "in"
                         , "..."
                         ]
-            where
-                -- This is the format
-                installName = name <> "-" <> version
 
         nixCodeBlock :: Text -> H.Html
         nixCodeBlock
