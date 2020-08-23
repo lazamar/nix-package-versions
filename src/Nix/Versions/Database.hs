@@ -43,7 +43,7 @@ import Database.SQLite.Simple (ToRow(toRow), FromRow(fromRow), SQLData(..), Name
 import Database.SQLite.Simple.FromField (FromField(..))
 import Database.SQLite.Simple.ToField (ToField(..))
 import Nix.Revision (Channel, Revision(..), RevisionPackages, Package(..))
-import Nix.Versions.Types (CachePath(..), DBFile(..), Hash(..), Version(..), Name(..), Commit(..))
+import Nix.Versions.Types (CachePath(..), DBFile(..), Hash(..), Version(..), FullName(..), KeyName(..), Name(..), Commit(..))
 
 import qualified Database.SQLite.Simple as SQL
 import qualified Data.HashMap.Strict as HashMap
@@ -84,6 +84,8 @@ ensureTablesAreCreated = do
     execute_ $ "CREATE TABLE IF NOT EXISTS " <> db_PACKAGE_NEW <> " "
                         <> "( NAME              TEXT NOT NULL"
                         <> ", VERSION           TEXT NOT NULL"
+                        <> ", KEY_NAME          TEXT NOT NULL"
+                        <> ", FULL_NAME         TEXT NOT NULL"
                         <> ", CHANNEL           TEXT NOT NULL"
                         <> ", COMMIT_HASH       TEXT NOT NULL"
                         <> ", DESCRIPTION       TEXT"
@@ -240,9 +242,11 @@ data SQLPackage = SQLPackage Package Channel Hash Day
     deriving (Show, Eq)
 
 instance ToRow SQLPackage where
-    toRow (SQLPackage (Package name description version nixpkgsPath) channel hash represents) =
+    toRow (SQLPackage (Package name version keyName fullName description nixpkgsPath) channel hash represents) =
         [ toField name          -- NAME
         , toField version       -- VERSION
+        , toField keyName       -- KEY_NAME
+        , toField fullName      -- FULL_NAME
         , toField channel       -- CHANNEL
         , toField hash          -- COMMIT_HASH
         , nullable description  -- DESCRIPTION
@@ -259,10 +263,12 @@ instance FromRow SQLPackage where
         <*> SQL.field
         <*> SQL.field
         <*> SQL.field
+        <*> SQL.field
+        <*> SQL.field
         where
-            create name version channel hash description nixpkgsPath represents =
+            create name version keyName fullName channel hash description nixpkgsPath represents =
                 SQLPackage
-                    (Package name description version nixpkgsPath)
+                    (Package name version keyName fullName description nixpkgsPath)
                     channel
                     hash
                     represents
@@ -278,6 +284,18 @@ instance ToField Name where
 
 instance FromField Name where
     fromField = fmap Name . fromField
+
+instance ToField KeyName where
+    toField = SQLText . fromKeyName
+
+instance FromField KeyName where
+    fromField = fmap KeyName . fromField
+
+instance ToField FullName where
+    toField = SQLText . fromFullName
+
+instance FromField FullName where
+    fromField = fmap FullName . fromField
 
 instance ToField Hash where
     toField = SQLText . fromHash

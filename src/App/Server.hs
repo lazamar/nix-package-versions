@@ -218,7 +218,7 @@ pageHome request = do
                        else mapM_ (toRow channel) $ zip [0..] results
 
         toRow :: Channel -> (Int, (Package, Hash, Day)) -> H.Html
-        toRow channel (ix, (Package name _ v@(Version version) _, hash, day)) =
+        toRow channel (ix, (Package name v@(Version version) _ _ _ _, hash, day)) =
             H.tr
                 ! (if odd ix then A.class_ "pure-table-odd" else mempty)
                 $ do

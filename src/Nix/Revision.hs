@@ -80,27 +80,27 @@ type RevisionPackages = [Package]
 -- | The information we have about a nix package in one revision
 data Package = Package
     { name :: Name
-    --, keyName :: KeyName
-    --, fullName :: FullName
-    , description :: Maybe Text
     , version :: Version
+    , keyName :: KeyName
+    , fullName :: FullName
+    , description :: Maybe Text
     , nixpkgsPath :: Maybe FilePath
     } deriving (Show, Generic, Eq)
 
 data RawPackage = RawPackage
     { raw_name :: Name
+    , raw_version :: Version
     , raw_fullName :: FullName
     , raw_description :: (Maybe Text)
-    , raw_version :: Version
     , raw_nixpkgsPath :: (Maybe FilePath)
     }
 
 instance FromJSON RawPackage where
     parseJSON = withObject "RawPackage" $ \v -> RawPackage
        <$> (v .: "pname" <&> Name)
+       <*> (v .: "version" <&> Version)
        <*> (v .: "name" <&> FullName)
        <*> (v .: "meta" >>= (.:? "description"))
-       <*> (v .: "version" <&> Version)
        <*> (v .: "meta" >>= (.:? "position"))
 
 -- | Load data from a json file created with downloadTo
@@ -116,11 +116,13 @@ loadFrom path = liftIO
         toRevisionPackages = map toPackage . HMap.toList
 
         toPackage :: (KeyName, RawPackage) -> Package
-        toPackage (key, RawPackage name fullName description version nixpkgsPath) =
+        toPackage (keyName, RawPackage name version fullName description nixpkgsPath) =
             Package
                 name
-                description
                 version
+                keyName
+                fullName
+                description
                 nixpkgsPath
 
 
