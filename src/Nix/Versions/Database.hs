@@ -195,7 +195,7 @@ saveVersions (Revision channel (Commit hash _)) represents packages  = do
             return $ not newerRevisionAlreadyInDatabase
 
         insert pkg = execute
-            ("INSERT OR REPLACE INTO " <> db_PACKAGE_NEW <> " VALUES (?,?,?,?,?,?,?)")
+            ("INSERT OR REPLACE INTO " <> db_PACKAGE_NEW <> " VALUES (?,?,?,?,?,?,?,?,?)")
             (SQLPackage pkg channel hash represents)
 
 removeRevisionsAndPackagesFrom :: MonadSQL m => Commit -> m ()

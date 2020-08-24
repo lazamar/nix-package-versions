@@ -95,18 +95,26 @@ saveToDatabase :: _ => Day -> Revision -> Either String RevisionPackages -> m (E
 saveToDatabase day revision ePackages =
     case ePackages  of
         Left err -> do
-            logInfoTimed (msg "Saved invalid")
+            logInfoTimed (msg "Saved invalid" $ Just err)
                 $ DB.saveRevision day revision InvalidRevision
             return $ Left err
         Right packages -> do
-            logInfoTimed (msg "Saved to DB")
+            logInfoTimed (msg "Saved successfull" Nothing)
                 $ DB.saveRevisionWithPackages day revision packages
-            return $ Right $ msg "Success"
+            return $ Right $ msg "Success" Nothing
     where
         Revision channel commit = revision
         Commit hash _ = commit
         padded = take 20 . (<> repeat ' ')
-        msg txt = unwords [padded txt, showGregorian day, show channel, show hash]
+        msg txt mnote = unwords
+            [ padded txt
+            , showGregorian day
+            , show channel
+            , show hash
+            , case mnote of
+                Nothing -> ""
+                Just note -> " | " <> note
+            ]
 
 completedRevisions :: [(Day, Revision, RevisionState)] -> Set Revision
 completedRevisions
