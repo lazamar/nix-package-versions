@@ -61,12 +61,6 @@ data Channel
     | Nixos_18_03
     | Nixos_17_09
     | Nixos_17_03
-    | Nixos_16_09
-    | Nixos_16_03
-    | Nixos_15_09
-    | Nixos_14_12
-    | Nixos_14_04
-    | Nixos_13_10
     deriving (Show, Read, Eq, Bounded, Enum, Ord)
 
 -- | The contents of a json file with package information
@@ -205,12 +199,6 @@ channelBranch = GitBranch . \case
     Nixos_18_03          -> "nixos-18.03"
     Nixos_17_09          -> "nixos-17.09"
     Nixos_17_03          -> "nixos-17.03"
-    Nixos_16_09          -> "nixos-16.09"
-    Nixos_16_03          -> "nixos-16.03"
-    Nixos_15_09          -> "nixos-15.09"
-    Nixos_14_12          -> "nixos-14.12"
-    Nixos_14_04          -> "nixos-14.04"
-    Nixos_13_10          -> "nixos-13.10"
 
 -------------------------------------------------------------------------------
 -- GitHub
