@@ -89,7 +89,6 @@ ensureTablesAreCreated = do
                         <> ", CHANNEL           TEXT NOT NULL"
                         <> ", COMMIT_HASH       TEXT NOT NULL"
                         <> ", DESCRIPTION       TEXT"
-                        <> ", NIXPATH           TEXT"
                         <> ", REPRESENTS_DATE   TEXT NOT NULL"
                         <> ", PRIMARY KEY (NAME, VERSION, CHANNEL)"
                         <> ", FOREIGN KEY (CHANNEL, COMMIT_HASH, REPRESENTS_DATE) REFERENCES " <> db_REVISION_NEW <> " (CHANNEL, COMMIT_HASH, REPRESENTS_DATE)"
@@ -195,7 +194,7 @@ saveVersions (Revision channel (Commit hash _)) represents packages  = do
             return $ not newerRevisionAlreadyInDatabase
 
         insert pkg = execute
-            ("INSERT OR REPLACE INTO " <> db_PACKAGE_NEW <> " VALUES (?,?,?,?,?,?,?,?,?)")
+            ("INSERT OR REPLACE INTO " <> db_PACKAGE_NEW <> " VALUES (?,?,?,?,?,?,?,?)")
             (SQLPackage pkg channel hash represents)
 
 removeRevisionsAndPackagesFrom :: MonadSQL m => Commit -> m ()
@@ -242,7 +241,7 @@ data SQLPackage = SQLPackage Package Channel Hash Day
     deriving (Show, Eq)
 
 instance ToRow SQLPackage where
-    toRow (SQLPackage (Package name version keyName fullName description nixpkgsPath) channel hash represents) =
+    toRow (SQLPackage (Package name version keyName fullName description) channel hash represents) =
         [ toField name          -- NAME
         , toField version       -- VERSION
         , toField keyName       -- KEY_NAME
@@ -250,7 +249,6 @@ instance ToRow SQLPackage where
         , toField channel       -- CHANNEL
         , toField hash          -- COMMIT_HASH
         , nullable description  -- DESCRIPTION
-        , nullable nixpkgsPath  -- NIXPATH
         , toField represents    -- REPRESENTS_DATE
         ]
 
@@ -264,11 +262,10 @@ instance FromRow SQLPackage where
         <*> SQL.field
         <*> SQL.field
         <*> SQL.field
-        <*> SQL.field
         where
-            create name version keyName fullName channel hash description nixpkgsPath represents =
+            create name version keyName fullName channel hash description represents =
                 SQLPackage
-                    (Package name version keyName fullName description nixpkgsPath)
+                    (Package name version keyName fullName description)
                     channel
                     hash
                     represents

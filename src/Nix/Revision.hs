@@ -84,7 +84,6 @@ data Package = Package
     , keyName :: KeyName
     , fullName :: FullName
     , description :: Maybe Text
-    , nixpkgsPath :: Maybe FilePath
     } deriving (Show, Generic, Eq)
 
 data RawPackage = RawPackage
@@ -92,7 +91,6 @@ data RawPackage = RawPackage
     , raw_version :: Version
     , raw_fullName :: FullName
     , raw_description :: (Maybe Text)
-    , raw_nixpkgsPath :: (Maybe FilePath)
     }
 
 instance FromJSON RawPackage where
@@ -101,7 +99,6 @@ instance FromJSON RawPackage where
        <*> (v .: "version" <&> Version)
        <*> (v .: "name" <&> FullName)
        <*> (v .: "meta" >>= (.:? "description"))
-       <*> (v .: "meta" >>= (.:? "position"))
 
 -- | Load data from a json file created with downloadTo
 loadFrom :: MonadIO m => FilePath -> m (Either String RevisionPackages)
@@ -116,14 +113,13 @@ loadFrom path = liftIO
         toRevisionPackages = map toPackage . HMap.toList
 
         toPackage :: (KeyName, RawPackage) -> Package
-        toPackage (keyName, RawPackage name version fullName description nixpkgsPath) =
+        toPackage (keyName, RawPackage name version fullName description) =
             Package
                 name
                 version
                 keyName
                 fullName
                 description
-                nixpkgsPath
 
 
 -- | Download info for a revision and build a list of all

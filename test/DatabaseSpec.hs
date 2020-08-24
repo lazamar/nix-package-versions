@@ -41,7 +41,7 @@ spec = do
         let pname = Name "my-package"
             keyName = KeyName "my-package"
             fullName = FullName "my-package"
-            pkg   = Package pname (Version "1.0") keyName fullName Nothing Nothing
+            pkg   = Package pname (Version "1.0") keyName fullName Nothing
             commit = Commit (Hash "hash") (ModifiedJulianDay 10)
             packages = [pkg]
             revision = Revision defaultChannel  commit
@@ -64,7 +64,7 @@ spec = do
 
         it "Searching a package in a channel doesn't return results from a different channel" $ do
             overDatabase $ runLoggerT discard $ do
-                let otherPkg      = Package pname (Version "other-version") keyName fullName Nothing  Nothing
+                let otherPkg      = Package pname (Version "other-version") keyName fullName Nothing
                     otherChannel  = succ defaultChannel
                     otherCommit = Commit (Hash "otherHash") (ModifiedJulianDay 10)
                     otherRevision = Revision otherChannel otherCommit
