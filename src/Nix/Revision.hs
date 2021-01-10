@@ -179,7 +179,7 @@ revisionsOn guser channel day
 gnixpkgs :: GitHubRepo
 gnixpkgs = GitHubRepo
     { g_user = "NixOS"
-    , g_repo = "nixpkgs-channels"
+    , g_repo = "nixpkgs"
     }
 
 channelBranch :: Channel -> GitBranch
