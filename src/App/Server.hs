@@ -285,7 +285,7 @@ pageHome request = do
                         , "     pkgs = import (builtins.fetchGit {"
                         , "         # Descriptive name to make the store path easier to identify                "
                         , "         name = \"my-old-revision\";                                                 "
-                        , "         url = \"https://github.com/nixos/nixpkgs-channels/\";                       "
+                        , "         url = \"https://github.com/NixOS/nixpkgs/\";                       "
                         , "         ref = \"refs/heads/" <> toChannelBranch channel <> "\";                     "
                         , "         rev = \""<> fromHash hash <> "\";                                           "
                         , "     }) {};                                                                           "
