@@ -329,7 +329,7 @@ toChannelBranch :: Channel -> Text
 toChannelBranch = fromGitBranch . channelBranch
 
 revisionURL :: Hash -> Text
-revisionURL (Hash hash) = "https://github.com/NixOS/nixpkgs-channels/archive/" <> hash <> ".tar.gz"
+revisionURL (Hash hash) = "https://github.com/NixOS/nixpkgs/archive/" <> hash <> ".tar.gz"
 
 analytics :: H.Html
 analytics = do
