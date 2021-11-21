@@ -46,7 +46,6 @@ import Nix.Revision (Channel, Revision(..), RevisionPackages, Package(..))
 import Nix.Versions.Types (CachePath(..), DBFile(..), Hash(..), Version(..), FullName(..), KeyName(..), Name(..), Commit(..))
 
 import qualified Database.SQLite.Simple as SQL
-import qualified Data.HashMap.Strict as HashMap
 
 import Control.Monad.SQL
 

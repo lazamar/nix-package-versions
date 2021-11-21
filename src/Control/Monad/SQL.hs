@@ -19,6 +19,8 @@ import Control.Monad.Log (LoggingT(..))
 import Control.Monad.Reader (ReaderT(..), local, ask, reader, runReaderT)
 import Control.Monad.Trans.Class (lift)
 import Database.SQLite.Simple (ToRow, FromRow, NamedParam, Query)
+import System.FilePath.Posix (takeDirectory)
+import System.Directory (createDirectoryIfMissing)
 
 import qualified Database.SQLite.Simple as SQL
 
@@ -42,6 +44,7 @@ instance (MonadSQL m) => MonadSQL (LoggingT msg m) where
 
 runMonadSQL :: (MonadConc m, MonadIO m) => FilePath -> MonadSQLT m a -> m a
 runMonadSQL path m = do
+    liftIO $ createDirectoryIfMissing True (takeDirectory path)
     conn <- liftIO $ SQL.open path
     writeLock <- newMVar True
     let state = DBState conn writeLock

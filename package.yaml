@@ -55,6 +55,7 @@ dependencies:
 - skylighting
 - unliftio
 - monad-control
+- filepath
 
 library:
   source-dirs: src
