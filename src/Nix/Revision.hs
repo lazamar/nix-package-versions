@@ -19,7 +19,7 @@ module Nix.Revision
     , revisionsOn
     , channelBranch
     , Revision(..)
-    , RevisionPackages(..)
+    , RevisionPackages
     , Package(..)
     , Channel(..)
     , GitBranch(..)
@@ -54,6 +54,9 @@ data Channel
     | Nixpkgs_18_03_darwin
     | Nixpkgs_17_09_darwin
     | Nixos_unstable
+    | Nixos_21_11
+    | Nixos_21_05
+    | Nixos_20_09
     | Nixos_20_03
     | Nixos_19_09
     | Nixos_19_03
@@ -192,6 +195,9 @@ channelBranch = GitBranch . \case
     Nixpkgs_18_03_darwin -> "nixpkgs-18.03-darwin"
     Nixpkgs_17_09_darwin -> "nixpkgs-17.09-darwin"
     Nixos_unstable       -> "nixos-unstable"
+    Nixos_21_11          -> "nixos-21.11"
+    Nixos_21_05          -> "nixos-21.05"
+    Nixos_20_09          -> "nixos-20.09"
     Nixos_20_03          -> "nixos-20.03"
     Nixos_19_09          -> "nixos-19.09"
     Nixos_19_03          -> "nixos-19.03"
