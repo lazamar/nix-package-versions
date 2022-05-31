@@ -52,7 +52,8 @@ savePackageVersionsForPeriod ::
     )
     => Config -> Day -> Day -> m [Either String String]
 savePackageVersionsForPeriod (Config _ _ gitUser) from to = do
-    daysToDownload <- forConcurrently [minBound..] $ \channel -> do
+    let channels = [minBound..]
+    daysToDownload <- forConcurrently channels $ \channel -> do
         dbRevisions <- DB.revisions channel
         let days = daysMissingIn dbRevisions
             completed = completedRevisions dbRevisions

@@ -95,7 +95,7 @@ instance FromJSON RawPackage where
        <$> (v .: "pname" <&> Name)
        <*> (v .: "version" <&> Version)
        <*> (v .: "name" <&> FullName)
-       <*> (v .: "meta" >>= (.:? "description"))
+       <*> (v .:? "meta" >>= maybe (pure Nothing) (.:? "description"))
 
 -- | Load data from a json file created with downloadTo
 loadFrom :: MonadIO m => FilePath -> m (Either String RevisionPackages)
