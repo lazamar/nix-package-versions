@@ -279,6 +279,9 @@ pageHome request = do
                 H.p $ "Use " <> H.code (toMarkup keyName) <> " in a " <> H.code "nix-shell" <> "."
                 nixCodeBlock $ "nix-shell -p " <> keyName <> " -I nixpkgs=" <> revisionURL hash
 
+                H.p $ "Use " <> H.code (toMarkup keyName) <> " in a " <> H.code "nix shell" <> " via flakes."
+                nixCodeBlock $ "nix shell github:NixOS/nixpkgs/" <> fromHash hash <> "#" <> keyName
+
                 H.p $ "Use " <> H.code (toMarkup name) <> " in a nix script via tarball"
                 nixCodeBlock $ Text.unlines
                         [ "let"
