@@ -54,6 +54,7 @@ data Channel
     | Nixpkgs_18_03_darwin
     | Nixpkgs_17_09_darwin
     | Nixos_unstable
+    | Nixos_22_11
     | Nixos_22_05
     | Nixos_21_11
     | Nixos_21_05
@@ -196,6 +197,7 @@ channelBranch = GitBranch . \case
     Nixpkgs_18_03_darwin -> "nixpkgs-18.03-darwin"
     Nixpkgs_17_09_darwin -> "nixpkgs-17.09-darwin"
     Nixos_unstable       -> "nixos-unstable"
+    Nixos_22_11          -> "nixos-22.11"
     Nixos_22_05          -> "nixos-22.05"
     Nixos_21_11          -> "nixos-21.11"
     Nixos_21_05          -> "nixos-21.05"
