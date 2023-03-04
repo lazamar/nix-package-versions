@@ -26,7 +26,9 @@ import Control.Monad.Log2 (logInfoTimed)
 import Control.Monad.STM.Class (retry)
 import Data.Bifunctor (first)
 import Data.Hashable (Hashable)
+import qualified Data.Map as Map
 import Data.Set (Set)
+import qualified Data.Set as Set
 import Data.Time.Calendar (Day, showGregorian)
 import Data.Time.Calendar.WeekDate (toWeekDate, fromWeekDate)
 import Nix.Revision (Revision(..), Channel(..), revisionsOn, RevisionPackages)
@@ -34,10 +36,8 @@ import Nix.Versions.Database (RevisionState(..))
 import Nix.Versions.Types (Commit(..), GitHubUser)
 import Control.Monad.Revisions (MonadRevisions, packagesFor)
 
-import Nix.Storage (Database)
-import qualified Nix.Storage as Storage
-import qualified Data.Set as Set
-import qualified Data.Map as Map
+import App.Storage (Database)
+import qualified App.Storage as Storage
 
 -- | Download lists of packages and their versions for commits
 -- between 'to' and 'from' dates and save them to the database.

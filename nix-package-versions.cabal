@@ -21,12 +21,12 @@ source-repository head
 
 library
   exposed-modules:
+      App.Storage
       Control.Monad.LimitedConc
       Control.Monad.Log2
       Control.Monad.Revisions
       Control.Monad.SQL
       Nix.Revision
-      Nix.Storage
       Nix.Versions
       Nix.Versions.Database
       Nix.Versions.Types

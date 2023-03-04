@@ -40,9 +40,10 @@ import Database.SQLite.Simple.FromField (FromField(..))
 import Database.SQLite.Simple.ToField (ToField(..))
 
 import Nix.Revision (Channel, Revision(..), RevisionPackages, Package(..))
-import Nix.Storage (Storage, Database(..), RevisionState(..))
-import qualified Nix.Storage as Storage
 import Nix.Versions.Types (CachePath(..), DBFile(..), Hash(..), Version(..), FullName(..), KeyName(..), Name(..), Commit(..))
+
+import App.Storage (Storage, Database(..), RevisionState(..))
+import qualified App.Storage as Storage
 
 import qualified Database.SQLite.Simple as SQL
 

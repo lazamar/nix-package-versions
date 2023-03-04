@@ -34,8 +34,8 @@ import qualified Text.Blaze.Html5.Attributes as A
 import qualified Data.Text as Text
 import qualified Skylighting as S
 
-import Nix.Storage (Database)
-import qualified Nix.Storage as Storage
+import App.Storage (Database)
+import qualified App.Storage as Storage
 
 newtype Port = Port Int
     deriving (Show, Eq, Read)
