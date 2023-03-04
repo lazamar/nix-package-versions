@@ -4,7 +4,15 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Control.Monad.SQL where
+module Control.Monad.SQL
+  ( MonadSQLT
+  , MonadSQL(..)
+  , runMonadSQL
+  , SQLDatabase
+  , withSQLDatabase
+  , runSQL
+  )
+  where
 
 {-
 A monad to provide access to an SQL database handling nested transactions
@@ -51,6 +59,19 @@ runMonadSQL path m = do
     finally
         (runReaderT m state)
         (liftIO $ SQL.close conn)
+
+newtype SQLDatabase = SQLDatabase (DBState IO)
+
+withSQLDatabase :: FilePath -> (SQLDatabase -> IO a) -> IO a
+withSQLDatabase path act = do
+  liftIO $ createDirectoryIfMissing True (takeDirectory path)
+  conn <- liftIO $ SQL.open path
+  writeLock <- newMVar True
+  let state = DBState conn writeLock
+  act (SQLDatabase state) `finally` SQL.close conn
+
+runSQL :: SQLDatabase -> MonadSQLT IO a -> IO a
+runSQL (SQLDatabase state) m = runReaderT m state
 
 data DBState m = DBState
     { conn :: SQL.Connection
