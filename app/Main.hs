@@ -5,7 +5,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 
-module Main (main, getConfig, run) where
+module Main (main) where
 
 import Data.Foldable (fold)
 import Data.Either (isRight, isLeft)
@@ -16,10 +16,7 @@ import Data.Time.Clock (UTCTime(..), getCurrentTime)
 import Data.Text (unpack)
 import Text.Read (readMaybe)
 import Nix.Versions.Types
-    ( DBFile(..)
-    , GitHubUser(..)
-    , CachePath(..)
-    , Config(..)
+    ( GitHubUser(..)
     , Task(..)
     , Commit(..)
     , Hash(..))
@@ -110,11 +107,11 @@ main = do
   downloadRevisions :: Day -> Day -> IO ()
   downloadRevisions from to = do
     hSetBuffering stdout LineBuffering
-    Config{..} <- getConfig
-    SQLite.withOpenDatabase config_cacheDirectory config_databaseFile $ \database ->
+    (dbPath, user) <- getConfig
+    SQLite.withDatabase dbPath $ \database ->
       run inTerminal $ do
         result <- logInfoTimed "savePackageVersionsForPeriod" $
-            V.savePackageVersionsForPeriod database config_gitHubUser from to
+            V.savePackageVersionsForPeriod database user from to
         mapM_ (logInfo . show) result
         now <- liftIO $ getCurrentTime
         logInfo $ unlines
@@ -127,8 +124,8 @@ main = do
 
   --runServer :: Port -> IO ()
   runServer port = do
-    Config{..} <- getConfig
-    SQLite.withOpenDatabase config_cacheDirectory config_databaseFile $ \database ->
+    (dbPath, _) <- getConfig
+    SQLite.withDatabase dbPath $ \database ->
       run inTerminal $ Server.run database port
 
 -- | Run our monad stack
@@ -143,17 +140,16 @@ run handler action = do
 -------------------------------------------------------------------------------------------
 -- Configuration
 
+type Config = (FilePath, GitHubUser)
+
 getConfig :: IO Config
 getConfig  = do
     !env <- readDotenv ".env"
-    return $ Config
-        { config_databaseFile   = DBFile "SQL_DATABASE.db"
-        , config_cacheDirectory = CachePath "./saved-versions"
-        , config_gitHubUser     =
-            GitHubUser
-                (B.pack $ env Map.! "GIT_USER")
-                (B.pack $ env Map.! "GIT_TOKEN")
-        }
+    let dbPath = "./saved-versions/SQL_DATABASE.db"
+        user = GitHubUser
+          (B.pack $ env Map.! "GIT_USER")
+          (B.pack $ env Map.! "GIT_TOKEN")
+    return (dbPath, user)
 
 readDotenv :: FilePath -> IO (Map.Map String String)
 readDotenv  path = Map.fromList . fmap toEntry . filter isValid . lines <$> readFile path

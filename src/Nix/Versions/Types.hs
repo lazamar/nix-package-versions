@@ -11,10 +11,7 @@ module Nix.Versions.Types
     , Version(..)
     , Hash(..)
     , Commit(..)
-    , Config(..)
-    , CachePath(..)
     , GitHubUser(..)
-    , DBFile(..)
     , Task(..)
     ) where
 
@@ -25,15 +22,6 @@ import Data.ByteString (ByteString)
 import Data.Time.Calendar (Day)
 import GHC.Generics (Generic)
 
-data Config = Config
-    { config_databaseFile   :: DBFile
-    , config_cacheDirectory :: CachePath
-    , config_gitHubUser     :: GitHubUser
-    }
-    deriving (Show)
-
-newtype DBFile = DBFile String
-    deriving (Show)
 
 data GitHubUser = GitHubUser
     { g_username :: ByteString

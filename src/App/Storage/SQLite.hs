@@ -11,7 +11,7 @@
 {-| SQLite implementation of the Storage class
 -}
 
-module App.Storage.SQLite (withOpenDatabase) where
+module App.Storage.SQLite (withDatabase) where
 
 import Control.Monad.Conc.Class (MonadConc)
 import Control.Concurrent.Classy.Async (mapConcurrently)
@@ -27,7 +27,7 @@ import Database.SQLite.Simple.FromField (FromField(..))
 import Database.SQLite.Simple.ToField (ToField(..))
 
 import Nix.Revision (Channel, Revision(..), RevisionPackages, Package(..))
-import Nix.Versions.Types (CachePath(..), DBFile(..), Hash(..), Version(..), FullName(..), KeyName(..), Name(..), Commit(..))
+import Nix.Versions.Types (Hash(..), Version(..), FullName(..), KeyName(..), Name(..), Commit(..))
 
 import App.Storage (Storage, Database(..), RevisionState(..))
 import qualified App.Storage as Storage
@@ -38,8 +38,8 @@ import Control.Monad.SQL (Connection, MonadSQL(..), runSQL, connect)
 
 newtype SQLiteDatabase = SQLiteDatabase Connection
 
-withOpenDatabase :: CachePath -> DBFile -> (Database -> IO a) -> IO a
-withOpenDatabase (CachePath dir) (DBFile fname) act =
+withDatabase :: FilePath -> (Database -> IO a) -> IO a
+withDatabase path act =
   connect path $ \conn -> do
     runSQL conn $ do
       -- Prepare database for usage
@@ -50,8 +50,6 @@ withOpenDatabase (CachePath dir) (DBFile fname) act =
       execute_ "PRAGMA synchronous = NORMAL"
       ensureTablesAreCreated
     act $ Database $ SQLiteDatabase conn
-  where
-    path = dir <> "/" <> fname
 
 instance Storage SQLiteDatabase where
   versions (SQLiteDatabase conn) channel name =
