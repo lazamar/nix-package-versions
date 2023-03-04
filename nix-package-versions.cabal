@@ -26,6 +26,7 @@ library
       Control.Monad.Revisions
       Control.Monad.SQL
       Nix.Revision
+      Nix.Storage
       Nix.Versions
       Nix.Versions.Database
       Nix.Versions.Types

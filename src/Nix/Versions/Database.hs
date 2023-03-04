@@ -15,7 +15,7 @@ Save and retrieving Database types from persistent storage
 module Nix.Versions.Database
     ( RevisionState(..)
     , withConnection
-
+    , withOpenDatabase
     -- Write
     , saveRevisionWithPackages
     , saveRevision
@@ -30,8 +30,6 @@ import Control.Concurrent.Classy.Async (mapConcurrently)
 import Control.Monad.Catch (MonadMask)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad (void)
-import Control.Monad.Log (MonadLog, WithSeverity(..))
-import Control.Monad.Log2 (logDebugTimed)
 import Data.Maybe (listToMaybe)
 import Data.Maybe (fromMaybe)
 import Data.String (fromString, IsString)
@@ -40,12 +38,35 @@ import Data.Time.Calendar (Day(..))
 import Database.SQLite.Simple (ToRow(toRow), FromRow(fromRow), SQLData(..), NamedParam((:=)))
 import Database.SQLite.Simple.FromField (FromField(..))
 import Database.SQLite.Simple.ToField (ToField(..))
+
 import Nix.Revision (Channel, Revision(..), RevisionPackages, Package(..))
+import Nix.Storage (Storage, RevisionState(..))
+import qualified Nix.Storage as Storage
 import Nix.Versions.Types (CachePath(..), DBFile(..), Hash(..), Version(..), FullName(..), KeyName(..), Name(..), Commit(..))
 
 import qualified Database.SQLite.Simple as SQL
 
 import Control.Monad.SQL
+
+newtype SQLiteDatabase = SQLiteDatabase Connection
+
+withOpenDatabase :: CachePath -> DBFile -> (SQLiteDatabase -> IO a) -> IO a
+withOpenDatabase (CachePath dir) (DBFile fname) act =
+  connect path $ \conn -> do
+    runSQL conn initialise
+    act $ SQLiteDatabase conn
+  where
+    path = dir <> "/" <> fname
+
+instance Storage SQLiteDatabase where
+  versions (SQLiteDatabase conn) channel name =
+    runSQL conn $ versions channel name
+  revisions (SQLiteDatabase conn) channel =
+    runSQL conn $ revisions channel
+  writePackages (SQLiteDatabase conn) represents revision packages =
+    runSQL conn $ saveRevisionWithPackages represents revision packages
+  writeRevisionState (SQLiteDatabase conn) date revision state =
+    runSQL conn $ saveRevision date revision state
 
 -- Constants
 
@@ -53,17 +74,21 @@ db_REVISION_NEW , db_PACKAGE_NEW :: IsString a => a
 db_REVISION_NEW = "revision"
 db_PACKAGE_NEW = "package"
 
+initialise :: (MonadConc m, MonadMask m, MonadIO m) => MonadSQLT m ()
+initialise = do
+  -- Prepare database for usage
+  -- Enable foreign key constraints. It's really weird that they would otherwise just not work.
+  execute_ "PRAGMA foreign_keys = ON"
+  -- Make sure the correct transaction tracking option is in place
+  execute_ "PRAGMA journal_mode = WAL"
+  execute_ "PRAGMA synchronous = NORMAL"
+  ensureTablesAreCreated
+
 withConnection :: (MonadConc m, MonadMask m, MonadIO m) => CachePath -> DBFile -> MonadSQLT m a -> m a
 withConnection (CachePath dir) (DBFile fname) action =
     runMonadSQL path $ do
-        -- Prepare database for usage
-        -- Enable foreign key constraints. It's really weird that they would otherwise just not work.
-        execute_ "PRAGMA foreign_keys = ON"
-        -- Make sure the correct transaction tracking option is in place
-        execute_ "PRAGMA journal_mode = WAL"
-        execute_ "PRAGMA synchronous = NORMAL"
-        ensureTablesAreCreated
-        action
+      initialise
+      action
     where
         path = dir <> "/" <> fname
 
@@ -135,10 +160,10 @@ fromSQLRevision (SQLRevision day revision state) = (day, revision, state)
 
 -- | Save the entire database
 saveRevisionWithPackages
-    :: (MonadIO m, MonadLog (WithSeverity String) m,MonadConc m, MonadSQL m)
+    :: (MonadIO m, MonadConc m, MonadSQL m)
     => Day -> Revision -> RevisionPackages -> m ()
 saveRevisionWithPackages represents revision packages =
-    withTransaction $ logDebugTimed "saveRevisionWithPackages" $ do
+    withTransaction $ do
         saveRevision represents revision Incomplete
         saveVersions revision represents packages
         saveRevision represents revision Success
@@ -178,16 +203,6 @@ saveVersions (Revision channel (Commit hash _)) represents packages  = do
         insert pkg = execute
             ("INSERT OR REPLACE INTO " <> db_PACKAGE_NEW <> " VALUES (?,?,?,?,?,?,?,?)")
             (SQLPackage pkg channel hash represents)
-
--- | Whether all revision entries were added to the table.
--- Order is important. Success is the max value
-data RevisionState
-    = PreDownload        -- ^ We are still to start the download and handling of this state
-    | Incomplete         -- ^ The process of adding packages to the DB was started but not finished
-    | InvalidRevision    -- ^ This revision cannot be built. It is not worth trying again.
-    | Success            -- ^ All revision packages were successfully added to the DB
-    deriving (Show, Eq, Enum, Read, Ord)
-
 
 -- | One row from db_REVISION_NEW
 data SQLRevision = SQLRevision Day Revision RevisionState

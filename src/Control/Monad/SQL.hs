@@ -8,8 +8,8 @@ module Control.Monad.SQL
   ( MonadSQLT
   , MonadSQL(..)
   , runMonadSQL
-  , SQLDatabase
-  , withSQLDatabase
+  , Connection
+  , connect
   , runSQL
   )
   where
@@ -31,6 +31,19 @@ import System.FilePath.Posix (takeDirectory)
 import System.Directory (createDirectoryIfMissing)
 
 import qualified Database.SQLite.Simple as SQL
+
+newtype Connection = Connection (DBState IO)
+
+connect :: FilePath -> (Connection -> IO a) -> IO a
+connect path act = do
+  liftIO $ createDirectoryIfMissing True (takeDirectory path)
+  conn <- liftIO $ SQL.open path
+  writeLock <- newMVar True
+  let state = DBState conn writeLock
+  act (Connection state) `finally` SQL.close conn
+
+runSQL :: Connection -> MonadSQLT IO a -> IO a
+runSQL (Connection state) m = runReaderT m state
 
 -- | Access an SQL database
 class Monad m => MonadSQL m where
@@ -59,19 +72,6 @@ runMonadSQL path m = do
     finally
         (runReaderT m state)
         (liftIO $ SQL.close conn)
-
-newtype SQLDatabase = SQLDatabase (DBState IO)
-
-withSQLDatabase :: FilePath -> (SQLDatabase -> IO a) -> IO a
-withSQLDatabase path act = do
-  liftIO $ createDirectoryIfMissing True (takeDirectory path)
-  conn <- liftIO $ SQL.open path
-  writeLock <- newMVar True
-  let state = DBState conn writeLock
-  act (SQLDatabase state) `finally` SQL.close conn
-
-runSQL :: SQLDatabase -> MonadSQLT IO a -> IO a
-runSQL (SQLDatabase state) m = runReaderT m state
 
 data DBState m = DBState
     { conn :: SQL.Connection
