@@ -48,10 +48,10 @@ run ::
     , MonadUnliftIO m
     ) => Port -> Config -> m ()
 run (Port port) config = do
-    Persistent.withConnection (config_cacheDirectory config) (config_databaseFile config) $ do
-        logInfo $ "Running server on port " <> show port
-        runInIO <- askRunInIO
-        liftIO . Warp.run port $ app runInIO
+  Persistent.withConnection (config_cacheDirectory config) (config_databaseFile config) $ do
+    logInfo $ "Running server on port " <> show port
+    runInIO <- askRunInIO
+    liftIO . Warp.run port $ app runInIO
 
 app :: MonadSQL m => (m Response -> IO Response) -> Application
 app runInIO request respond = do

@@ -22,8 +22,7 @@ module Control.Monad.Log2
 import Control.Monad.Log (MonadLog, Handler, WithSeverity(..), LoggingT(..), runLoggingT, logInfo, logDebug)
 import Control.Monad.Reader (ReaderT(..))
 import Control.Monad.Conc.Class (MonadConc)
-import Control.Monad.IO.Class (MonadIO, liftIO)
-import System.CPUTime (getCPUTime)
+import Control.Monad.IO.Class (MonadIO)
 import System.TimeIt (timeItT)
 
 type LoggerT = LoggingT
@@ -44,9 +43,10 @@ discard   = const $ return ()
 
 deriving newtype instance MonadConc m => MonadConc (LoggingT messsage m)
 
-timed log msg action = do
+timed :: MonadIO m => (String -> m a) -> String -> m b -> m b
+timed runLog msg action = do
     (time, result) <- timeItT action
-    log $ "[" <> show time <> "] " <> msg
+    _ <- runLog $ "[" <> show time <> "] " <> msg
     return result
 
 logInfoTimed :: (MonadIO m , MonadLog (WithSeverity String) m) => String -> m a -> m a

@@ -85,10 +85,10 @@ data Package = Package
     } deriving (Show, Generic, Eq)
 
 data RawPackage = RawPackage
-    { raw_name :: Name
-    , raw_version :: Version
-    , raw_fullName :: FullName
-    , raw_description :: (Maybe Text)
+    { _raw_name :: Name
+    , _raw_version :: Version
+    , _raw_fullName :: FullName
+    , _raw_description :: (Maybe Text)
     }
 
 instance FromJSON RawPackage where

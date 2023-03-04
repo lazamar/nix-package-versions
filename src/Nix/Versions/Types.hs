@@ -10,10 +10,7 @@ module Nix.Versions.Types
     , KeyName(..)
     , Version(..)
     , Hash(..)
-    , Channel(..)
-    , Repo(..)
     , Commit(..)
-    , NixConfig(..)
     , Config(..)
     , CachePath(..)
     , GitHubUser(..)
@@ -26,7 +23,6 @@ import Data.Hashable (Hashable)
 import Data.Text (Text)
 import Data.ByteString (ByteString)
 import Data.Time.Calendar (Day)
-import Data.Monoid (Monoid)
 import GHC.Generics (Generic)
 
 data Config = Config
@@ -47,14 +43,6 @@ data GitHubUser = GitHubUser
 
 newtype CachePath = CachePath FilePath
     deriving (Show)
-
-class NixConfig m where
-    getConfig :: m Config
-
-data Channel
-    = NixOS Version
-    | UnstableNixOS
-    | UnstableNixPkgs
 
 -- | The name of the key in the nixpkgs expression that identifies the package.
 newtype KeyName = KeyName { fromKeyName :: Text }
@@ -79,9 +67,6 @@ newtype Version = Version { fromVersion :: Text }
 -- | A commit hash
 newtype Hash = Hash { fromHash :: Text }
     deriving (Eq, Show, Generic, FromJSON, ToJSON, Ord)
-
--- A local clone of a git repository
-data Repo = Repo FilePath
 
 data Commit = Commit Hash Day
     deriving (Show, Eq, Ord)

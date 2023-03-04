@@ -19,12 +19,10 @@ module Nix.Versions.Database
     -- Write
     , saveRevisionWithPackages
     , saveRevision
-    , removeRevisionsAndPackagesFrom
 
     -- Read
     , versions
     , revisions
-    , revisionState
     ) where
 
 import Control.Monad.Conc.Class (MonadConc)
@@ -128,21 +126,6 @@ revisions channel = do
     results <- query ("SELECT * FROM " <> db_REVISION_NEW <> " WHERE CHANNEL = ?") [channel]
     return $ fromSQLRevision <$> results
 
--- | Answers the question "did we insert all packages contained in this commit?"
--- It requires a channel because a commit may be used in multiple channels and the
--- outcome in packages may be different
-revisionState :: MonadSQL m => Revision -> m (Maybe RevisionState)
-revisionState (Revision channel (Commit (Hash hash) _)) = do
-    commits <- queryNamed
-        ("SELECT * FROM " <> db_REVISION_NEW <> " WHERE COMMIT_HASH = :hash AND CHANNEl = :channel")
-        [ ":hash"    := hash
-        , ":channel" := channel
-        ]
-    return $ toState <$> listToMaybe commits
-    where
-        toState (SQLRevision _ _ state) = state
-
-
 fromSQLRevision :: SQLRevision -> (Day, Revision, RevisionState)
 fromSQLRevision (SQLRevision day revision state) = (day, revision, state)
 
@@ -195,11 +178,6 @@ saveVersions (Revision channel (Commit hash _)) represents packages  = do
         insert pkg = execute
             ("INSERT OR REPLACE INTO " <> db_PACKAGE_NEW <> " VALUES (?,?,?,?,?,?,?,?)")
             (SQLPackage pkg channel hash represents)
-
-removeRevisionsAndPackagesFrom :: MonadSQL m => Commit -> m ()
-removeRevisionsAndPackagesFrom (Commit hash _) = do
-    execute ("DELETE FROM " <> db_PACKAGE_NEW <> " WHERE COMMIT_HASH = ?") [hash]
-    execute ("DELETE FROM " <> db_REVISION_NEW <> " WHERE COMMIT_HASH = ?") [hash]
 
 -- | Whether all revision entries were added to the table.
 -- Order is important. Success is the max value
