@@ -15,7 +15,6 @@ module App.Storage.SQLite (withOpenDatabase) where
 
 import Control.Monad.Conc.Class (MonadConc)
 import Control.Concurrent.Classy.Async (mapConcurrently)
-import Control.Monad.Catch (MonadMask)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad (void)
 import Data.Maybe (listToMaybe)
@@ -35,14 +34,21 @@ import qualified App.Storage as Storage
 
 import qualified Database.SQLite.Simple as SQL
 
-import Control.Monad.SQL
+import Control.Monad.SQL (Connection, MonadSQL(..), runSQL, connect)
 
 newtype SQLiteDatabase = SQLiteDatabase Connection
 
 withOpenDatabase :: CachePath -> DBFile -> (Database -> IO a) -> IO a
 withOpenDatabase (CachePath dir) (DBFile fname) act =
   connect path $ \conn -> do
-    runSQL conn initialise
+    runSQL conn $ do
+      -- Prepare database for usage
+      -- Enable foreign key constraints. It's really weird that they would otherwise just not work.
+      execute_ "PRAGMA foreign_keys = ON"
+      -- Make sure the correct transaction tracking option is in place
+      execute_ "PRAGMA journal_mode = WAL"
+      execute_ "PRAGMA synchronous = NORMAL"
+      ensureTablesAreCreated
     act $ Database $ SQLiteDatabase conn
   where
     path = dir <> "/" <> fname
@@ -62,16 +68,6 @@ instance Storage SQLiteDatabase where
 db_REVISION_NEW , db_PACKAGE_NEW :: IsString a => a
 db_REVISION_NEW = "revision"
 db_PACKAGE_NEW = "package"
-
-initialise :: (MonadConc m, MonadMask m, MonadIO m) => MonadSQLT m ()
-initialise = do
-  -- Prepare database for usage
-  -- Enable foreign key constraints. It's really weird that they would otherwise just not work.
-  execute_ "PRAGMA foreign_keys = ON"
-  -- Make sure the correct transaction tracking option is in place
-  execute_ "PRAGMA journal_mode = WAL"
-  execute_ "PRAGMA synchronous = NORMAL"
-  ensureTablesAreCreated
 
 ensureTablesAreCreated :: MonadSQL m => m ()
 ensureTablesAreCreated = do
