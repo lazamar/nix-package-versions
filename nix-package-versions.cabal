@@ -1,9 +1,5 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.34.7.
---
--- see: https://github.com/sol/hpack
-
 name:           nix-package-versions
 version:        0.1.0.0
 description:    Please see the README on GitHub at <https://github.com/githubuser/nix-package-versions#readme>
@@ -25,8 +21,6 @@ source-repository head
 
 library
   exposed-modules:
-      App.Main
-      App.Server
       Control.Monad.LimitedConc
       Control.Monad.Log2
       Control.Monad.Revisions
@@ -83,10 +77,13 @@ library
 executable nix-package-versions-exe
   main-is: Main.hs
   other-modules:
+      Server
       Paths_nix_package_versions
   hs-source-dirs:
       app
   ghc-options: -threaded -rtsopts -with-rtsopts=-N -O2
+  default-extensions:
+      OverloadedStrings NamedFieldPuns
   build-depends:
       aeson
     , async

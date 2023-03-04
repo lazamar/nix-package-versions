@@ -4,7 +4,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TupleSections #-}
 
-module App.Server (run, Port(..)) where
+module Server (run, Port(..)) where
 
 import Control.Arrow ((&&&))
 import Control.Monad (mapM_, join)
