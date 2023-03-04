@@ -40,7 +40,7 @@ import Database.SQLite.Simple.FromField (FromField(..))
 import Database.SQLite.Simple.ToField (ToField(..))
 
 import Nix.Revision (Channel, Revision(..), RevisionPackages, Package(..))
-import Nix.Storage (Storage, RevisionState(..))
+import Nix.Storage (Storage, Database(..), RevisionState(..))
 import qualified Nix.Storage as Storage
 import Nix.Versions.Types (CachePath(..), DBFile(..), Hash(..), Version(..), FullName(..), KeyName(..), Name(..), Commit(..))
 
@@ -50,11 +50,11 @@ import Control.Monad.SQL
 
 newtype SQLiteDatabase = SQLiteDatabase Connection
 
-withOpenDatabase :: CachePath -> DBFile -> (SQLiteDatabase -> IO a) -> IO a
+withOpenDatabase :: CachePath -> DBFile -> (Database -> IO a) -> IO a
 withOpenDatabase (CachePath dir) (DBFile fname) act =
   connect path $ \conn -> do
     runSQL conn initialise
-    act $ SQLiteDatabase conn
+    act $ Database $ SQLiteDatabase conn
   where
     path = dir <> "/" <> fname
 

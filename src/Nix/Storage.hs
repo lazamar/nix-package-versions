@@ -1,3 +1,4 @@
+{-# LANGUAGE ExistentialQuantification #-}
 module Nix.Storage where
 
 import Data.Time.Calendar (Day(..))
@@ -22,3 +23,14 @@ class Storage s where
   -- write
   writePackages :: s -> Day -> Revision -> [Package] -> IO ()
   writeRevisionState :: s -> Day -> Revision -> RevisionState -> IO ()
+
+data Database = forall s. Storage s => Database s
+
+instance Storage Database where
+    versions (Database s) channel name = versions s channel name
+    revisions (Database s) channel = revisions s channel
+    writePackages (Database s) day revision packages =
+      writePackages s day revision packages
+    writeRevisionState (Database s) day revision state =
+      writeRevisionState s day revision state
+

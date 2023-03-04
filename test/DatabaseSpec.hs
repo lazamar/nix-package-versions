@@ -1,6 +1,5 @@
 module DatabaseSpec (spec) where
 
-import App.Main (run)
 import Control.Monad.SQL (MonadSQLT)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Log2 (runLoggerT, discard)
@@ -104,16 +103,6 @@ spec = do
                 v2 <- P.versions defaultChannel pname
                 v1 `shouldBe` [(pkg, hash, newDay)]
                 v2 `shouldBe` [(pkg, hash, newDay)]
-
-        it "Works with main transformer stack" $ do
-            withSystemTempDirectory "NIX_TEST" $ \dirPath ->
-                let config = Config  (DBFile "Test.db") (CachePath dirPath) (GitHubUser "" "")
-                in
-                run config discard $ do
-                    () <- P.saveRevisionWithPackages day revision packages
-                    v1 <- P.versions defaultChannel  pname
-                    liftIO $ length v1 `shouldBe` 1
-
 
 getPackage :: (Package, Hash, Day) -> Package
 getPackage (p,_,_) = p

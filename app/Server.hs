@@ -8,7 +8,6 @@ module Server (run, Port(..)) where
 
 import Control.Arrow ((&&&))
 import Control.Monad (mapM_, join)
-import Control.Monad.SQL (MonadSQL)
 import Control.Monad.Conc.Class (MonadConc)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Control.Monad.Log (MonadLog, WithSeverity(..), logInfo)
@@ -35,7 +34,8 @@ import qualified Text.Blaze.Html5.Attributes as A
 import qualified Data.Text as Text
 import qualified Skylighting as S
 
-import qualified Nix.Versions.Database as Persistent
+import Nix.Storage (Database)
+import qualified Nix.Storage as Storage
 
 newtype Port = Port Int
     deriving (Show, Eq, Read)
@@ -44,24 +44,22 @@ run ::
     ( MonadIO m
     , MonadLog (WithSeverity String) m
     , MonadConc m
-    , MonadSQL m
     , MonadUnliftIO m
-    ) => Port -> Config -> m ()
-run (Port port) config = do
-  Persistent.withConnection (config_cacheDirectory config) (config_databaseFile config) $ do
-    logInfo $ "Running server on port " <> show port
-    runInIO <- askRunInIO
-    liftIO . Warp.run port $ app runInIO
+    ) => Database -> Port -> m ()
+run database (Port port) = do
+  logInfo $ "Running server on port " <> show port
+  runInIO <- askRunInIO
+  liftIO . Warp.run port $ app database runInIO
 
-app :: MonadSQL m => (m Response -> IO Response) -> Application
-app runInIO request respond = do
+app :: MonadIO m => Database -> (m Response -> IO Response) -> Application
+app database runInIO request respond = do
     response <- runInIO $ case rawPathInfo request of
-        "/"     -> pageHome request
+        "/"     -> pageHome database request
         _       -> return pageNotFound
     respond response
 
-pageHome :: MonadSQL m => Request -> m Response
-pageHome request = do
+pageHome :: MonadIO m => Database -> Request -> m Response
+pageHome database request = do
     mPackages <- traverse getVersions mSearched
     return $ responseLBS status200 [("Content-Type", "text/html")] $ renderHtml $
         H.docTypeHtml do
@@ -185,14 +183,18 @@ pageHome request = do
         revisionKey = "revision"
         instructionsAnchor = "instructions"
 
-        getVersions (channel, name) = (channel,) <$> Persistent.versions channel name
+        getVersions (channel, name) = liftIO $ do
+          versions <- Storage.versions database channel name
+          return (channel, versions)
 
         mSelectedChannel = do
             val <- queryValueFor channelKey
             fromChannelBranch val
 
+        mSearchedPackage :: Maybe Name
         mSearchedPackage = Name <$> queryValueFor pkgKey
 
+        mSearched :: Maybe (Channel, Name)
         mSearched = (,) <$> mSelectedChannel <*> mSearchedPackage
 
         mSelectedRevision = Hash <$> queryValueFor revisionKey

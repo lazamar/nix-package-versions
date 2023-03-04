@@ -20,7 +20,6 @@ import Control.Concurrent.Classy.STM.TVar (newTVar, readTVar, writeTVar)
 import Control.Monad (foldM)
 import Control.Monad.Catch (finally)
 import Control.Monad.Conc.Class (MonadConc, atomically)
-import Control.Monad.SQL (MonadSQL)
 import Control.Monad.IO.Class (MonadIO(..))
 import Control.Monad.Log (MonadLog, WithSeverity)
 import Control.Monad.Log2 (logInfoTimed)
@@ -32,10 +31,11 @@ import Data.Time.Calendar (Day, showGregorian)
 import Data.Time.Calendar.WeekDate (toWeekDate, fromWeekDate)
 import Nix.Revision (Revision(..), Channel(..), revisionsOn, RevisionPackages)
 import Nix.Versions.Database (RevisionState(..))
-import Nix.Versions.Types (Commit(..), Config(..))
+import Nix.Versions.Types (Commit(..), GitHubUser)
 import Control.Monad.Revisions (MonadRevisions, packagesFor)
 
-import qualified Nix.Versions.Database as DB
+import Nix.Storage (Database)
+import qualified Nix.Storage as Storage
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 
@@ -47,13 +47,12 @@ savePackageVersionsForPeriod ::
     , MonadFail m
     , MonadIO m
     , MonadRevisions m
-    , MonadSQL m
     )
-    => Config -> Day -> Day -> m [Either String String]
-savePackageVersionsForPeriod (Config _ _ gitUser) from to = do
+    => Database -> GitHubUser -> Day -> Day -> m [Either String String]
+savePackageVersionsForPeriod database gitUser from to = do
     let channels = [minBound..]
     daysToDownload <- forConcurrently channels $ \channel -> do
-        dbRevisions <- DB.revisions channel
+        dbRevisions <- liftIO $ Storage.revisions database channel
         let days = daysMissingIn dbRevisions
             completed = completedRevisions dbRevisions
         return $ (channel, completed,) <$> days
@@ -69,7 +68,7 @@ savePackageVersionsForPeriod (Config _ _ gitUser) from to = do
                 Right dayRevisions ->
                     -- We will try only a few revisions. If they don't succeed we give up on that revision.
                     tryInSequence
-                        $ fmap (\r -> saveToDatabase day r =<< download r)
+                        $ fmap (\r -> saveToDatabase database day r =<< download r)
                         $ take maxAttempts
                         $ filter (not . (`Set.member` completed))
                         $ dayRevisions
@@ -91,16 +90,18 @@ savePackageVersionsForPeriod (Config _ _ gitUser) from to = do
 
 -- | Given the result of a revision download attempt, save the appropriate
 -- result to the database and return some info about what was done
-saveToDatabase :: _ => Day -> Revision -> Either String RevisionPackages -> m (Either String String)
-saveToDatabase day revision ePackages =
+saveToDatabase :: _ => Database -> Day -> Revision -> Either String RevisionPackages -> m (Either String String)
+saveToDatabase database day revision ePackages =
     case ePackages  of
         Left err -> do
             logInfoTimed (msg "Saved invalid" $ Just err)
-                $ DB.saveRevision day revision InvalidRevision
+                $ liftIO
+                $ Storage.writeRevisionState database day revision InvalidRevision
             return $ Left err
         Right packages -> do
             logInfoTimed (msg "Saved successfull" Nothing)
-                $ DB.saveRevisionWithPackages day revision packages
+                $ liftIO
+                $ Storage.writePackages database day revision packages
             return $ Right $ msg "Success" Nothing
     where
         Revision channel commit = revision

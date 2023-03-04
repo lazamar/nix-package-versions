@@ -43,7 +43,7 @@ import qualified Server as Server
 import qualified Data.Map as Map
 import qualified Nix.Versions as V
 import qualified Nix.Revision as Revision
-import qualified Nix.Versions.Database as DB
+import qualified Nix.Versions.Database as Database
 import qualified Data.ByteString.Char8 as B
 
 import Control.Monad.Revisions
@@ -109,9 +109,11 @@ main = do
   downloadRevisions :: Day -> Day -> IO ()
   downloadRevisions from to = do
     hSetBuffering stdout LineBuffering
-    config <- getConfig
-    run config inTerminal $ do
-        result <- logInfoTimed "savePackageVersionsForPeriod" $ V.savePackageVersionsForPeriod config from to
+    Config{..} <- getConfig
+    Database.withOpenDatabase config_cacheDirectory config_databaseFile $ \database ->
+      run inTerminal $ do
+        result <- logInfoTimed "savePackageVersionsForPeriod" $
+            V.savePackageVersionsForPeriod database config_gitHubUser from to
         mapM_ (logInfo . show) result
         now <- liftIO $ getCurrentTime
         logInfo $ unlines
@@ -124,19 +126,18 @@ main = do
 
   --runServer :: Port -> IO ()
   runServer port = do
-    config <- getConfig
-    run config inTerminal $ Server.run port config
+    Config{..} <- getConfig
+    Database.withOpenDatabase config_cacheDirectory config_databaseFile $ \database ->
+      run inTerminal $ Server.run database port
 
 -- | Run our monad stack
-run :: Config -> Handler IO (WithSeverity String) -> _ -> IO ()
-run (Config dbFile cacheDir _) handler action = do
+run :: Handler IO (WithSeverity String) -> _ -> IO ()
+run handler action = do
     capabilities <- getNumCapabilities
-
     runLoggerT handler
         $ runMonadLimitedConc (Map.fromList [(BuildNixRevision, max 1 $ capabilities - 3)])
         $ runMonadRevisions
-        $ DB.withConnection cacheDir dbFile action
-
+        $ action
 
 -------------------------------------------------------------------------------------------
 -- Configuration
