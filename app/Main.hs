@@ -43,11 +43,12 @@ import qualified Server as Server
 import qualified Data.Map as Map
 import qualified Nix.Versions as V
 import qualified Nix.Revision as Revision
-import qualified Nix.Versions.Database as Database
 import qualified Data.ByteString.Char8 as B
 
 import Control.Monad.Revisions
 import Control.Monad.LimitedConc
+
+import qualified App.Storage.SQLite as SQLite
 
 -- CLI
 data CLIOptions
@@ -110,7 +111,7 @@ main = do
   downloadRevisions from to = do
     hSetBuffering stdout LineBuffering
     Config{..} <- getConfig
-    Database.withOpenDatabase config_cacheDirectory config_databaseFile $ \database ->
+    SQLite.withOpenDatabase config_cacheDirectory config_databaseFile $ \database ->
       run inTerminal $ do
         result <- logInfoTimed "savePackageVersionsForPeriod" $
             V.savePackageVersionsForPeriod database config_gitHubUser from to
@@ -127,7 +128,7 @@ main = do
   --runServer :: Port -> IO ()
   runServer port = do
     Config{..} <- getConfig
-    Database.withOpenDatabase config_cacheDirectory config_databaseFile $ \database ->
+    SQLite.withOpenDatabase config_cacheDirectory config_databaseFile $ \database ->
       run inTerminal $ Server.run database port
 
 -- | Run our monad stack

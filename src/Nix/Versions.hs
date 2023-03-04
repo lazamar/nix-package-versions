@@ -32,11 +32,10 @@ import qualified Data.Set as Set
 import Data.Time.Calendar (Day, showGregorian)
 import Data.Time.Calendar.WeekDate (toWeekDate, fromWeekDate)
 import Nix.Revision (Revision(..), Channel(..), revisionsOn, RevisionPackages)
-import Nix.Versions.Database (RevisionState(..))
 import Nix.Versions.Types (Commit(..), GitHubUser)
 import Control.Monad.Revisions (MonadRevisions, packagesFor)
 
-import App.Storage (Database)
+import App.Storage (Database, RevisionState(..))
 import qualified App.Storage as Storage
 
 -- | Download lists of packages and their versions for commits

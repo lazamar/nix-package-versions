@@ -22,13 +22,13 @@ source-repository head
 library
   exposed-modules:
       App.Storage
+      App.Storage.SQLite
       Control.Monad.LimitedConc
       Control.Monad.Log2
       Control.Monad.Revisions
       Control.Monad.SQL
       Nix.Revision
       Nix.Versions
-      Nix.Versions.Database
       Nix.Versions.Types
   other-modules:
       Paths_nix_package_versions

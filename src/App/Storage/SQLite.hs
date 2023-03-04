@@ -8,22 +8,10 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-{-|
-Save and retrieving Database types from persistent storage
+{-| SQLite implementation of the Storage class
 -}
 
-module Nix.Versions.Database
-    ( RevisionState(..)
-    , withConnection
-    , withOpenDatabase
-    -- Write
-    , saveRevisionWithPackages
-    , saveRevision
-
-    -- Read
-    , versions
-    , revisions
-    ) where
+module App.Storage.SQLite (withOpenDatabase) where
 
 import Control.Monad.Conc.Class (MonadConc)
 import Control.Concurrent.Classy.Async (mapConcurrently)
@@ -84,14 +72,6 @@ initialise = do
   execute_ "PRAGMA journal_mode = WAL"
   execute_ "PRAGMA synchronous = NORMAL"
   ensureTablesAreCreated
-
-withConnection :: (MonadConc m, MonadMask m, MonadIO m) => CachePath -> DBFile -> MonadSQLT m a -> m a
-withConnection (CachePath dir) (DBFile fname) action =
-    runMonadSQL path $ do
-      initialise
-      action
-    where
-        path = dir <> "/" <> fname
 
 ensureTablesAreCreated :: MonadSQL m => m ()
 ensureTablesAreCreated = do
