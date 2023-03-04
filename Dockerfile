@@ -17,4 +17,4 @@ RUN . $HOME/.nix-profile/etc/profile.d/nix.sh && nix-env -i cachix && cachix use
 RUN echo ". $HOME/.nix-profile/etc/profile.d/nix.sh" >> $HOME/.bashrc
 
 # Build project
-RUN stack build
+RUN cabal v2-build

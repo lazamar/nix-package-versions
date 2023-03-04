@@ -1,0 +1,178 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.34.7.
+--
+-- see: https://github.com/sol/hpack
+
+name:           nix-package-versions
+version:        0.1.0.0
+description:    Please see the README on GitHub at <https://github.com/githubuser/nix-package-versions#readme>
+homepage:       https://github.com/githubuser/nix-package-versions#readme
+bug-reports:    https://github.com/githubuser/nix-package-versions/issues
+author:         Marcelo Lazaroni
+maintainer:     example@example.com
+copyright:      2020 Marcelo Lazaroni
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    ChangeLog.md
+
+source-repository head
+  type: git
+  location: https://github.com/githubuser/nix-package-versions
+
+library
+  exposed-modules:
+      App.Main
+      App.Server
+      Control.Monad.LimitedConc
+      Control.Monad.Log2
+      Control.Monad.Revisions
+      Control.Monad.SQL
+      Nix.Revision
+      Nix.Versions
+      Nix.Versions.Database
+      Nix.Versions.Types
+  other-modules:
+      Paths_nix_package_versions
+  hs-source-dirs:
+      src
+  default-extensions:
+      OverloadedStrings NamedFieldPuns
+  ghc-options: -Wall -Wno-partial-type-signatures
+  build-depends:
+      aeson
+    , async
+    , base >=4.7 && <5
+    , blaze-html
+    , blaze-markup
+    , bytestring
+    , concurrency
+    , containers
+    , directory
+    , exceptions
+    , filepath
+    , hashable
+    , hspec
+    , hspec-expectations
+    , http-types
+    , logging-effect
+    , monad-control
+    , mtl
+    , optparse-applicative
+    , parallel
+    , parsec
+    , process
+    , req
+    , skylighting
+    , sqlite-simple
+    , temporary
+    , text
+    , time
+    , timeit
+    , transformers
+    , unix
+    , unliftio
+    , unordered-containers
+    , wai
+    , warp
+  default-language: Haskell2010
+
+executable nix-package-versions-exe
+  main-is: Main.hs
+  other-modules:
+      Paths_nix_package_versions
+  hs-source-dirs:
+      app
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N -O2
+  build-depends:
+      aeson
+    , async
+    , base >=4.7 && <5
+    , blaze-html
+    , blaze-markup
+    , bytestring
+    , concurrency
+    , containers
+    , directory
+    , exceptions
+    , filepath
+    , hashable
+    , hspec
+    , hspec-expectations
+    , http-types
+    , logging-effect
+    , monad-control
+    , mtl
+    , nix-package-versions
+    , optparse-applicative
+    , parallel
+    , parsec
+    , process
+    , req
+    , skylighting
+    , sqlite-simple
+    , temporary
+    , text
+    , time
+    , timeit
+    , transformers
+    , unix
+    , unliftio
+    , unordered-containers
+    , wai
+    , warp
+  default-language: Haskell2010
+
+test-suite nix-package-versions-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      DatabaseSpec
+      Paths_nix_package_versions
+  hs-source-dirs:
+      test
+  default-extensions:
+      OverloadedStrings
+      NamedFieldPuns
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      aeson
+    , async
+    , base >=4.7 && <5
+    , blaze-html
+    , blaze-markup
+    , bytestring
+    , concurrency
+    , containers
+    , directory
+    , exceptions
+    , filepath
+    , hashable
+    , hspec
+    , hspec-expectations
+    , http-types
+    , logging-effect
+    , monad-control
+    , mtl
+    , nix-package-versions
+    , optparse-applicative
+    , parallel
+    , parsec
+    , process
+    , req
+    , skylighting
+    , sqlite-simple
+    , temporary
+    , text
+    , time
+    , timeit
+    , transformers
+    , unix
+    , unliftio
+    , unordered-containers
+    , wai
+    , warp
+  default-language: Haskell2010

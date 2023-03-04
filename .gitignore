@@ -1,5 +1,4 @@
-.stack-work/
-nix-package-versions.cabal
+dist-newstyle/
 *~
 saved-versions
 build

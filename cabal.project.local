@@ -1,0 +1,2 @@
+ignore-project: False
+with-compiler: ghc-9.2.5
