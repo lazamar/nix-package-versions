@@ -1,0 +1,1 @@
+ghcid -c 'cabal v2-repl' nix-package-versions
