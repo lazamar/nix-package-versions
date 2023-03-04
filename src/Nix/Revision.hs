@@ -28,8 +28,19 @@ module Nix.Revision
 import Control.Monad.Catch (SomeException(..), handle, tryJust)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Log (MonadLog, WithSeverity, logDebug)
-import Data.Aeson (FromJSON, eitherDecodeFileStrict, parseJSON, withObject, (.:), (.:?), parseJSON)
+import Data.Aeson
+  ( FromJSON
+  , ToJSON
+  , ToJSONKey
+  , FromJSONKey
+  , eitherDecodeFileStrict
+  , parseJSON
+  , withObject
+  , (.:)
+  , (.:?)
+  , parseJSON )
 import Data.Functor ((<&>))
+import Data.Hashable (Hashable)
 import Data.List (partition)
 import Data.HashMap.Strict (HashMap)
 import Data.Text (unpack, Text)
@@ -65,7 +76,8 @@ data Channel
     | Nixos_18_03
     | Nixos_17_09
     | Nixos_17_03
-    deriving (Show, Read, Eq, Bounded, Enum, Ord)
+    deriving (Show, Read, Eq, Bounded, Enum, Ord, Generic)
+    deriving anyclass (Hashable, FromJSON, FromJSONKey, ToJSON, ToJSONKey)
 
 -- | The contents of a json file with package information
 data Revision = Revision
@@ -83,6 +95,9 @@ data Package = Package
     , fullName :: FullName
     , description :: Maybe Text
     } deriving (Show, Generic, Eq)
+
+instance FromJSON Package
+instance ToJSON Package
 
 data RawPackage = RawPackage
     { _raw_name :: Name

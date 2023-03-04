@@ -23,6 +23,7 @@ library
   exposed-modules:
       App.Storage
       App.Storage.SQLite
+      App.Storage.JSON
       Control.Monad.LimitedConc
       Control.Monad.Log2
       Control.Monad.Revisions
@@ -35,7 +36,12 @@ library
   hs-source-dirs:
       src
   default-extensions:
-      OverloadedStrings NamedFieldPuns
+      OverloadedStrings
+      NamedFieldPuns
+      RecordWildCards
+      DeriveGeneric
+      DeriveAnyClass
+      DerivingStrategies
   ghc-options: -Wall -Wno-partial-type-signatures
   build-depends:
       aeson

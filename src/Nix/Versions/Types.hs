@@ -45,7 +45,7 @@ newtype FullName = FullName { fromFullName :: Text }
 --  | The name of package. e.g. nodejs
 newtype Name = Name { fromName :: Text }
     deriving (Show, Eq, Generic)
-    deriving newtype (Hashable, FromJSON, ToJSON)
+    deriving newtype (Hashable, FromJSON, ToJSON, FromJSONKey, ToJSONKey)
 
 -- | A package version. e.g. v8.10-rc2
 newtype Version = Version { fromVersion :: Text }
@@ -54,11 +54,12 @@ newtype Version = Version { fromVersion :: Text }
 
 -- | A commit hash
 newtype Hash = Hash { fromHash :: Text }
-    deriving (Eq, Show, Generic, FromJSON, ToJSON, Ord)
+    deriving (Eq, Show, Generic, Ord)
+    deriving newtype (Hashable, FromJSON, ToJSON)
 
 data Commit = Commit Hash Day
-    deriving (Show, Eq, Ord)
-
+    deriving (Show, Eq, Ord, Generic)
+    deriving anyclass (Hashable, ToJSON, FromJSONKey, FromJSON, ToJSONKey)
 
 -- | Asynchronous tasks
 data Task

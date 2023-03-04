@@ -1,7 +1,9 @@
 {-# LANGUAGE ExistentialQuantification #-}
 module App.Storage where
 
+import Data.Aeson (FromJSON, ToJSON)
 import Data.Time.Calendar (Day(..))
+import GHC.Generics (Generic)
 
 import Nix.Revision (Channel, Revision, Package)
 import Nix.Versions.Types (Name, Hash)
@@ -13,7 +15,10 @@ data RevisionState
     | Incomplete         -- ^ The process of adding packages to the DB was started but not finished
     | InvalidRevision    -- ^ This revision cannot be built. It is not worth trying again.
     | Success            -- ^ All revision packages were successfully added to the DB
-    deriving (Show, Eq, Enum, Read, Ord)
+    deriving (Show, Eq, Enum, Read, Ord, Generic)
+
+instance ToJSON RevisionState
+instance FromJSON RevisionState
 
 class Storage s where
   -- read

@@ -46,6 +46,7 @@ import Control.Monad.Revisions
 import Control.Monad.LimitedConc
 
 import qualified App.Storage.SQLite as SQLite
+import qualified App.Storage.JSON as JSON
 
 -- CLI
 data CLIOptions
@@ -125,7 +126,7 @@ main = do
   --runServer :: Port -> IO ()
   runServer port = do
     (dbPath, _) <- getConfig
-    SQLite.withDatabase dbPath $ \database ->
+    SQLite.withDatabase config_cacheDirectory config_databaseFile $ \database ->
       run inTerminal $ Server.run database port
 
 -- | Run our monad stack
