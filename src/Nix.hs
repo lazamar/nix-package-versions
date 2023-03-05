@@ -50,8 +50,7 @@ import qualified GitHub
 import System.Exit (ExitCode(..))
 import System.Process (readCreateProcessWithExitCode, shell, CreateProcess(..))
 import System.IO.Temp (emptyTempFile, withSystemTempDirectory)
-
-import Control.Monad.Log2 (logDebug')
+import System.IO (hPutStrLn, stderr)
 
 -- | The name of the key in the nixpkgs expression that identifies the package.
 newtype KeyName = KeyName { fromKeyName :: Text }
@@ -221,15 +220,15 @@ instance FromJSON RawPackage where
 downloadTo :: FilePath -> Commit -> IO (Maybe String)
 downloadTo filePath commit
     = do
-        logDebug' $ unwords ["Downloading Nix version for", show commit, "into", filePath]
+        hPutStrLn stderr $ unwords ["Downloading Nix version for", show commit, "into", filePath]
         res <- fmap (either Just (const Nothing))
           $ run
           $ shell
           $ command
           $ filePath
         case res of
-            Nothing  -> logDebug' $ unwords ["Download successful for", show commit, "into", filePath]
-            Just err -> logDebug' $ unwords ["Download failed for", show commit, "into", filePath, err]
+            Nothing  -> hPutStrLn stderr $ unwords ["Download successful for", show commit, "into", filePath]
+            Just err -> hPutStrLn stderr $ unwords ["Download failed for", show commit, "into", filePath, err]
         return res
 
     where

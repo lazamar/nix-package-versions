@@ -24,12 +24,12 @@ library
       App.Storage
       App.Storage.SQLite
       App.Storage.JSON
-      Control.Monad.Log2
       Control.Monad.SQL
       Data.Git
       GitHub
       Nix.Versions
       Nix
+      System.Timed
   other-modules:
       Paths_nix_package_versions
   hs-source-dirs:

@@ -8,7 +8,6 @@ import Data.List (isPrefixOf)
 import Data.Time.Calendar (Day, showGregorian)
 import Data.Time.Clock.System (getSystemTime, systemToUTCTime)
 import Data.Time.Clock (UTCTime(..), getCurrentTime)
-import Control.Monad.Log2 (logInfo')
 import Options.Applicative
     (info, option, auto, helper, help, metavar, fullDesc, progDesc
     , header, long, showDefault, value, Parser, execParser, (<**>), command

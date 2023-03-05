@@ -9,7 +9,6 @@ module Server (run, Port(..)) where
 import Control.Arrow ((&&&))
 import Control.Monad (join)
 import Control.Monad.IO.Class (liftIO, MonadIO)
-import Control.Monad.Log2 (logInfo')
 import Data.Either (fromRight)
 import Data.Foldable (traverse_)
 import Data.Maybe (fromMaybe, fromJust)
@@ -22,6 +21,7 @@ import Network.Wai (Application, Request, Response, responseLBS, rawPathInfo, qu
 import Text.Blaze.Html.Renderer.Utf8 (renderHtml)
 import Text.Blaze.Html5 ((!))
 import Text.Blaze (toValue, toMarkup)
+import System.IO (hPutStrLn, stderr)
 
 import qualified Network.Wai.Handler.Warp as Warp
 import qualified Text.Blaze.Html5 as H
@@ -46,7 +46,7 @@ newtype Port = Port Int
 
 run :: Database -> Port -> IO ()
 run database (Port port) = do
-  logInfo' $ "Running server on port " <> show port
+  hPutStrLn stderr $ "Running server on port " <> show port
   Warp.run port $ app database
 
 app :: Database -> Application

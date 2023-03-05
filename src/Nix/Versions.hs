@@ -21,7 +21,6 @@ import Control.Monad (foldM)
 import Control.Monad.Catch (finally)
 import Control.Monad.Conc.Class (MonadConc, atomically)
 import Control.Monad.IO.Class (MonadIO(..))
-import Control.Monad.Log2 (logInfoTimed')
 import Control.Monad.STM.Class (retry)
 import Data.Bifunctor (first)
 import Data.Hashable (Hashable)
@@ -43,6 +42,7 @@ import GitHub (AuthenticatingUser(..))
 import qualified GitHub
 import App.Storage (Database, RevisionState(..))
 import qualified App.Storage as Storage
+import System.Timed (timed)
 
 -- | Download lists of packages and their versions for commits
 -- between 'to' and 'from' dates and save them to the database.
@@ -103,11 +103,11 @@ saveToDatabase
 saveToDatabase database day revision ePackages =
   case ePackages of
     Left err -> do
-      logInfoTimed' (msg "Saved invalid" $ Just err) $
+      timed (msg "Saved invalid" $ Just err) $
         Storage.writeRevisionState database day revision InvalidRevision
       return $ Left err
     Right packages -> do
-      logInfoTimed' (msg "Saved successfull" Nothing) $
+      timed (msg "Saved successfull" Nothing) $
         Storage.writePackages database day revision packages
       return $ Right $ msg "Success" Nothing
   where
