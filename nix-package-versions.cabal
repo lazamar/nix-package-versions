@@ -24,10 +24,10 @@ library
       App.Storage
       App.Storage.SQLite
       App.Storage.JSON
+      App.Update
       Control.Monad.SQL
       Data.Git
       GitHub
-      Nix.Versions
       Nix
       System.Timed
   other-modules:
@@ -43,6 +43,7 @@ library
       DerivingStrategies
       GeneralizedNewtypeDeriving
       LambdaCase
+      TupleSections
   ghc-options: -Wall -Wno-partial-type-signatures
   build-depends:
       aeson

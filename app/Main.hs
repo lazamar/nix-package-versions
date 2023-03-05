@@ -26,9 +26,9 @@ import qualified Data.Map as Map
 import qualified Data.ByteString.Char8 as B
 
 import qualified Nix
-import qualified Nix.Versions as V
 import qualified GitHub
 import qualified App.Storage.SQLite as SQLite
+import App.Update (savePackageVersionsForPeriod)
 
 -- CLI
 data CLIOptions
@@ -95,7 +95,7 @@ main = do
     (dbPath, user) <- getConfig
     SQLite.withDatabase dbPath $ \database -> do
       result <- Nix.withDownloader Nothing $ \downloader ->
-        V.savePackageVersionsForPeriod database downloader user from to
+        savePackageVersionsForPeriod database downloader user from to
       mapM_ (hPutStrLn stderr . show) result
       now <- getCurrentTime
       putStrLn $ unlines

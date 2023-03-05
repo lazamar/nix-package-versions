@@ -1,16 +1,7 @@
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE PartialTypeSignatures #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE LambdaCase #-}
-
 {- This module takes care of populating the database
 -}
 
-module Nix.Versions
+module App.Update
   ( savePackageVersionsForPeriod
   ) where
 
@@ -65,7 +56,7 @@ savePackageVersionsForPeriod database downloader gitUser from to = do
   where
       maxAttempts = 10
 
-      buildAndSaveDay :: _ => (Channel, Set Revision, Day) -> IO [Either String String]
+      buildAndSaveDay :: (Channel, Set Revision, Day) -> IO [Either String String]
       buildAndSaveDay (channel, completed, day) = do
           revisionsOn gitUser 30 channel day >>= \case
               Left err -> return $ [Left err]
