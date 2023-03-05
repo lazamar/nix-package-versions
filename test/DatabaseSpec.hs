@@ -1,8 +1,6 @@
 module DatabaseSpec (spec) where
 
 import Data.Time.Calendar (Day(ModifiedJulianDay))
-import Nix.Revision (Revision(..), Package(..), Channel(..), RevisionPackages)
-import Nix.Versions.Types (Hash(..), Version(..), KeyName(..), FullName(..), Name(..), Commit(..), GitHubUser(..))
 import System.IO.Temp (withSystemTempDirectory)
 import Test.Hspec (Spec, describe, it, shouldBe, shouldNotBe)
 import Test.Hspec.Expectations (HasCallStack)
@@ -14,6 +12,17 @@ import App.Storage (Database)
 import qualified App.Storage as Storage
 import qualified App.Storage.SQLite as SQLite
 import qualified App.Storage.JSON as JSON
+import Nix
+  ( Revision(..)
+  , Package(..)
+  , Channel(..)
+  , RevisionPackages
+  , Version(..)
+  , KeyName(..)
+  , FullName(..)
+  , Name(..) )
+import Data.Git (Hash(..), Commit(..))
+import GitHub (AuthenticatingUser(..))
 
 defaultChannel :: Channel
 defaultChannel = Nixpkgs_unstable
