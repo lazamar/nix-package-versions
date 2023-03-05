@@ -11,8 +11,8 @@
 -}
 
 module Nix.Versions
-    ( savePackageVersionsForPeriod
-    ) where
+  ( savePackageVersionsForPeriod
+  ) where
 
 import Control.Arrow ((&&&))
 import Control.Concurrent.Classy.Async (forConcurrently, wait, async)
@@ -21,8 +21,7 @@ import Control.Monad (foldM)
 import Control.Monad.Catch (finally)
 import Control.Monad.Conc.Class (MonadConc, atomically)
 import Control.Monad.IO.Class (MonadIO(..))
-import Control.Monad.Log (MonadLog, WithSeverity)
-import Control.Monad.Log2 (logInfoTimed)
+import Control.Monad.Log2 (logInfoTimed')
 import Control.Monad.STM.Class (retry)
 import Data.Bifunctor (first)
 import Data.Hashable (Hashable)
@@ -42,79 +41,82 @@ import qualified App.Storage as Storage
 -- | Download lists of packages and their versions for commits
 -- between 'to' and 'from' dates and save them to the database.
 savePackageVersionsForPeriod ::
-    ( MonadLog (WithSeverity String) m
-    , MonadConc m
-    , MonadFail m
-    , MonadIO m
-    , MonadRevisions m
-    )
-    => Database -> AuthenticatingUser -> Day -> Day -> m [Either String String]
+  ( MonadConc m
+  , MonadFail m
+  , MonadIO m
+  , MonadRevisions m
+  )
+  => Database -> AuthenticatingUser -> Day -> Day -> m [Either String String]
 savePackageVersionsForPeriod database gitUser from to = do
-    let channels = [minBound..]
-    daysToDownload <- forConcurrently channels $ \channel -> do
-        dbRevisions <- liftIO $ Storage.revisions database channel
-        let days = daysMissingIn dbRevisions
-            completed = completedRevisions dbRevisions
-        return $ (channel, completed,) <$> days
-    results <- limitedConcurrency 10 $ fmap buildAndSaveDay $ concat daysToDownload
-    return $ concat results
-    where
-        maxAttempts = 10
+  let channels = [minBound..]
+  daysToDownload <- forConcurrently channels $ \channel -> do
+      dbRevisions <- liftIO $ Storage.revisions database channel
+      let days = daysMissingIn dbRevisions
+          completed = completedRevisions dbRevisions
+      return $ (channel, completed,) <$> days
+  results <- limitedConcurrency 10 $ fmap buildAndSaveDay $ concat daysToDownload
+  return $ concat results
+  where
+      maxAttempts = 10
 
-        buildAndSaveDay :: _ => (Channel, Set Revision, Day) -> m [Either String String]
-        buildAndSaveDay (channel, completed, day) = do
-            revisionsOn gitUser maxAttempts channel day >>= \case
-                Left err -> return $ [Left err]
-                Right dayRevisions ->
-                    -- We will try only a few revisions. If they don't succeed we give up on that revision.
-                    tryInSequence
-                        $ fmap (\r -> saveToDatabase database day r =<< download r)
-                        $ filter (not . (`Set.member` completed))
-                        $ dayRevisions
+      buildAndSaveDay :: _ => (Channel, Set Revision, Day) -> m [Either String String]
+      buildAndSaveDay (channel, completed, day) = do
+          revisionsOn gitUser 30 channel day >>= \case
+              Left err -> return $ [Left err]
+              Right dayRevisions ->
+                  -- We will try only a few revisions. If they don't succeed we give up on that revision.
+                  tryInSequence
+                      $ fmap (\r -> liftIO . saveToDatabase database day r =<< download r)
+                      $ take maxAttempts
+                      $ filter (not . (`Set.member` completed))
+                      $ dayRevisions
 
-        download :: _ => Revision -> m (Either String RevisionPackages)
-        download (Revision _ commit) = first show <$> packagesFor commit
+      download :: _ => Revision -> m (Either String RevisionPackages)
+      download (Revision _ commit) = first show <$> packagesFor commit
 
-        daysMissingIn  :: [(Day, Revision, RevisionState)] -> [Day]
-        daysMissingIn revisions
-            = fmap toMonday
-            $ Set.toList
-            $ weeksAsked  `Set.difference` weeksCompleted  maxAttempts revisions
+      daysMissingIn  :: [(Day, Revision, RevisionState)] -> [Day]
+      daysMissingIn revisions
+          = fmap toMonday
+          $ Set.toList
+          $ weeksAsked  `Set.difference` weeksCompleted  maxAttempts revisions
 
-        weeksAsked :: Set (Year, Week)
-        weeksAsked
-            = Set.fromList
-            $ filter (isWeekOfInterest . snd)
-            $ toWeek <$> [from .. to]
+      weeksAsked :: Set (Year, Week)
+      weeksAsked
+          = Set.fromList
+          $ filter (isWeekOfInterest . snd)
+          $ toWeek <$> [from .. to]
 
 -- | Given the result of a revision download attempt, save the appropriate
 -- result to the database and return some info about what was done
-saveToDatabase :: _ => Database -> Day -> Revision -> Either String RevisionPackages -> m (Either String String)
+saveToDatabase
+  :: Database
+  -> Day
+  -> Revision
+  -> Either String RevisionPackages
+  -> IO (Either String String)
 saveToDatabase database day revision ePackages =
-    case ePackages  of
-        Left err -> do
-            logInfoTimed (msg "Saved invalid" $ Just err)
-                $ liftIO
-                $ Storage.writeRevisionState database day revision InvalidRevision
-            return $ Left err
-        Right packages -> do
-            logInfoTimed (msg "Saved successfull" Nothing)
-                $ liftIO
-                $ Storage.writePackages database day revision packages
-            return $ Right $ msg "Success" Nothing
-    where
-        Revision channel commit = revision
-        Commit hash _ = commit
-        padded = take 20 . (<> repeat ' ')
-        msg txt mnote = unwords
-            [ padded txt
-            , showGregorian day
-            , show channel
-            , show hash
-            , case mnote of
-                Nothing -> ""
-                Just note -> " | " <> note
-            ]
+  case ePackages  of
+    Left err -> do
+      logInfoTimed' (msg "Saved invalid" $ Just err) $
+        Storage.writeRevisionState database day revision InvalidRevision
+      return $ Left err
+    Right packages -> do
+      logInfoTimed' (msg "Saved successfull" Nothing) $
+        Storage.writePackages database day revision packages
+      return $ Right $ msg "Success" Nothing
+  where
+    Revision channel commit = revision
+    Commit hash _ = commit
+    padded = take 20 . (<> repeat ' ')
+    msg txt mnote = unwords
+      [ padded txt
+      , showGregorian day
+      , show channel
+      , show hash
+      , case mnote of
+          Nothing -> ""
+          Just note -> " | " <> note
+      ]
 
 completedRevisions :: [(Day, Revision, RevisionState)] -> Set Revision
 completedRevisions

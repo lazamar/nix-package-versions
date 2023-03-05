@@ -16,6 +16,7 @@ module Control.Monad.Log2
     , inTerminal
     , discard
     , logInfoTimed
+    , logInfoTimed'
     , logDebugTimed
     ) where
 
@@ -51,6 +52,9 @@ timed runLog msg action = do
 
 logInfoTimed :: (MonadIO m , MonadLog (WithSeverity String) m) => String -> m a -> m a
 logInfoTimed = timed logInfo
+
+logInfoTimed' :: String -> IO a -> IO a
+logInfoTimed' = timed putStrLn
 
 logDebugTimed :: (MonadIO m , MonadLog (WithSeverity String) m) => String -> m a -> m a
 logDebugTimed  = timed logDebug
