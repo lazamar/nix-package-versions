@@ -39,12 +39,11 @@ import System.Timed (timed)
 -- between 'to' and 'from' dates and save them to the database.
 savePackageVersionsForPeriod
   :: Database
-  -> Nix.Downloader
   -> AuthenticatingUser
   -> Day
   -> Day
   -> IO [Either String String]
-savePackageVersionsForPeriod database downloader gitUser from to = do
+savePackageVersionsForPeriod database gitUser from to = do
   let channels = [minBound..]
   daysToDownload <- forConcurrently channels $ \channel -> do
       dbRevisions <- liftIO $ Storage.revisions database channel
@@ -69,7 +68,7 @@ savePackageVersionsForPeriod database downloader gitUser from to = do
                       $ dayRevisions
 
       download ::Revision -> IO (Either String RevisionPackages)
-      download (Revision _ commit) = first show <$> Nix.packagesAt downloader commit
+      download (Revision _ commit) = first show <$> Nix.packagesAt commit
 
       daysMissingIn  :: [(Day, Revision, RevisionState)] -> [Day]
       daysMissingIn revisions

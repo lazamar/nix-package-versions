@@ -14,13 +14,9 @@ module Nix
   , Revision(..)
   , channelBranch
   , nixpkgsRepo
-  , Downloader
-  , withDownloader
   , packagesAt
   ) where
 
-import Control.Concurrent.Async (async)
-import Control.Concurrent.MVar (MVar, newMVar, modifyMVar, newEmptyMVar, putMVar, readMVar)
 import Control.Monad.Catch (SomeException(..), handle)
 import Data.Aeson
   ( FromJSON
@@ -33,13 +29,9 @@ import Data.Aeson
   , (.:)
   , (.:?)
   , parseJSON )
-import Control.Monad (when, void)
-import Control.Monad.Trans.Except (runExceptT, ExceptT(..))
 import Data.Bifunctor (first)
 import Data.Hashable (Hashable)
 import Data.Functor ((<&>))
-import Data.Map (Map)
-import qualified Data.Map as Map
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HMap
 import Data.Text (Text, unpack, pack)
@@ -152,54 +144,21 @@ nixpkgsRepo = GitHub.Repository
 
 --------------------------------------------------------------
 
--- | Manager to ensure efficient download of packages for a revision.
--- Each commit will be downloaded at most once.
-data Downloader = Downloader
-  { s_storageDir :: FilePath
-  , s_commits :: MVar (Map Commit (MVar (Either BuildError FilePath)))
-    -- ^ We keep only file paths in the cache because keeping the packages
-    -- themselves would use too much memory
-  }
-
-withDownloader
-  :: Maybe FilePath   -- ^ path to store artifacts
-  -> (Downloader -> IO a)
-  -> IO a
-withDownloader mpath act =
-  withPath mpath $ \dir -> do
-  commitsVar <- newMVar mempty
-  act $ Downloader dir commitsVar
-  where
-    withPath Nothing f = withSystemTempDirectory "NIX_VERSIONS" f
-    withPath (Just path) f = f path
-
 -- | An error trying to build a revision
 data BuildError
     = BuildError Text
     | JsonDecodeError Text
     deriving (Show, Eq)
 
-packagesAt :: Downloader -> Commit -> IO (Either BuildError RevisionPackages)
-packagesAt Downloader{s_commits, s_storageDir} commit = do
-  (commitVar, isNew) <- modifyMVar s_commits $ \commitMap ->
-    case Map.lookup commit commitMap of
-      Just var ->
-        return (Map.insert commit var commitMap, (var, False))
-      Nothing -> do
-        var <- newEmptyMVar
-        return (Map.insert commit var commitMap, (var, True))
-
-  -- TODO: Limit concurrency here.
-  when isNew $ void $ async $ do
-      path <- emptyTempFile s_storageDir (unpack $ fromHash hash)
-      mErr <- Nix.downloadTo path commit
-      putMVar commitVar $ maybe (Right path) (Left . BuildError . pack) mErr
-
-  runExceptT $ do
-      path <- ExceptT $ readMVar commitVar
-      ExceptT $ first (JsonDecodeError . pack) <$> Nix.loadFrom path
-  where
-      Commit hash _ = commit
+-- | This is expensive and takes long.
+packagesAt :: Commit -> IO (Either BuildError RevisionPackages)
+packagesAt commit@(Commit hash _) =
+  withSystemTempDirectory "nix-package-versions" $ \dir -> do
+  path <- emptyTempFile dir (unpack $ fromHash hash)
+  mErr <- Nix.downloadTo path commit
+  case mErr of
+    Just err -> return $ Left $ BuildError $ pack err
+    Nothing -> first (JsonDecodeError . pack) <$> Nix.loadFrom path
 
 data RawPackage = RawPackage
     { _raw_name :: Name
@@ -215,52 +174,53 @@ instance FromJSON RawPackage where
        <*> (v .: "name" <&> FullName)
        <*> (v .:? "meta" >>= maybe (pure Nothing) (.:? "description"))
 
--- | Download info for a revision and build a list of all
--- packages in it. This can take a few minutes.
+-- | Download info for a revision and build a list of all packages in it.
+-- This can take a few minutes.
 downloadTo :: FilePath -> Commit -> IO (Maybe String)
-downloadTo filePath commit
-    = do
-        hPutStrLn stderr $ unwords ["Downloading Nix version for", show commit, "into", filePath]
-        res <- fmap (either Just (const Nothing))
-          $ run
-          $ shell
-          $ command
-          $ filePath
-        case res of
-            Nothing  -> hPutStrLn stderr $ unwords ["Download successful for", show commit, "into", filePath]
-            Just err -> hPutStrLn stderr $ unwords ["Download failed for", show commit, "into", filePath, err]
-        return res
+downloadTo filePath commit = do
+  hPutStrLn stderr $ unwords
+    [ "Downloading Nix version for", show commit, "into", filePath ]
+  res <- fmap (either Just (const Nothing))
+    $ run
+    $ shell
+    $ command
+    $ filePath
+  case res of
+    Nothing  -> hPutStrLn stderr $ unwords
+      ["Download successful for", show commit, "into", filePath]
+    Just err -> hPutStrLn stderr $ unwords
+      ["Download failed for", show commit, "into", filePath, err]
+  return res
+  where
+    -- | download package versions as JSON and save
+    -- them at destination
+    command destination =
+            "nix-env -qaP --json -f "
+            <> GitHub.archiveUrl nixpkgsRepo commit
+            <> " --arg config '" <> config <> "'"
+            <> " >" <> destination
 
-    where
-        -- | download package versions as JSON and save
-        -- them at destination
-        command destination =
-                "nix-env -qaP --json -f "
-                <> GitHub.archiveUrl nixpkgsRepo commit
-                <> " --arg config '" <> config <> "'"
-                <> " >" <> destination
+    -- | Configuration to make sure that all packages show up in the JSON
+    config = mconcat
+        [ "{"
+           --Ensures no aliases are in the results.
+        , "  allowAliases = false;"
+        --  Enable recursion into attribute sets that nix-env normally
+        --  doesn't look into so that we can get a more complete picture
+        --  of the available packages for the purposes of the index.
+        , "  packageOverrides = super: {"
+        , "    haskellPackages = super.recurseIntoAttrs super.haskellPackages;"
+        , "    rPackages = super.recurseIntoAttrs super.rPackages;"
+        , "  };"
+        , "}"
+        ]
 
-        -- | Configuration to make sure that all packages show up in the JSON
-        config = mconcat
-            [ "{"
-               --Ensures no aliases are in the results.
-            , "  allowAliases = false;"
-            --  Enable recursion into attribute sets that nix-env normally
-            --  doesn't look into so that we can get a more complete picture
-            --  of the available packages for the purposes of the index.
-            , "  packageOverrides = super: {"
-            , "    haskellPackages = super.recurseIntoAttrs super.haskellPackages;"
-            , "    rPackages = super.recurseIntoAttrs super.rPackages;"
-            , "  };"
-            , "}"
-            ]
-
-        run :: CreateProcess -> IO (Either String String)
-        run cmd = do
-            (exitCode, stdOut, stdErr) <- readCreateProcessWithExitCode cmd ""
-            return $ case exitCode of
-              ExitSuccess   -> Right stdOut
-              ExitFailure _ -> Left stdErr
+    run :: CreateProcess -> IO (Either String String)
+    run cmd = do
+        (exitCode, stdOut, stdErr) <- readCreateProcessWithExitCode cmd ""
+        return $ case exitCode of
+          ExitSuccess   -> Right stdOut
+          ExitFailure _ -> Left stdErr
 
 -- | Load data from a json file created with downloadTo
 loadFrom :: FilePath -> IO (Either String RevisionPackages)

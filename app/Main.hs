@@ -25,7 +25,6 @@ import qualified Server as Server
 import qualified Data.Map as Map
 import qualified Data.ByteString.Char8 as B
 
-import qualified Nix
 import qualified GitHub
 import qualified App.Storage.SQLite as SQLite
 import App.Update (savePackageVersionsForPeriod)
@@ -94,8 +93,7 @@ main = do
     hSetBuffering stdout LineBuffering
     (dbPath, user) <- getConfig
     SQLite.withDatabase dbPath $ \database -> do
-      result <- Nix.withDownloader Nothing $ \downloader ->
-        savePackageVersionsForPeriod database downloader user from to
+      result <- savePackageVersionsForPeriod database user from to
       mapM_ (hPutStrLn stderr . show) result
       now <- getCurrentTime
       putStrLn $ unlines
