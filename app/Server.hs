@@ -7,13 +7,11 @@
 module Server (run, Port(..)) where
 
 import Control.Arrow ((&&&))
-import Control.Monad (mapM_, join)
-import Control.Monad.Conc.Class (MonadConc)
+import Control.Monad (join)
 import Control.Monad.IO.Class (liftIO, MonadIO)
-import Control.Monad.Log (MonadLog, WithSeverity(..), logInfo)
+import Control.Monad.Log2 (logInfo')
 import Data.Either (fromRight)
 import Data.Foldable (traverse_)
-import Data.List (lookup)
 import Data.Maybe (fromMaybe, fromJust)
 import Data.String (fromString, IsString)
 import Data.Text.Encoding (decodeUtf8)
@@ -21,12 +19,9 @@ import Data.Text (Text)
 import Data.Time.Calendar (Day, showGregorian)
 import Network.HTTP.Types (status200, status404, renderQuery, queryTextToQuery)
 import Network.Wai (Application, Request, Response, responseLBS, rawPathInfo, queryString)
-import Nix.Revision (Package(..), Channel(..), GitBranch(..), channelBranch)
-import Nix.Versions.Types (Hash(..), Version(..), Name(..), KeyName(..), FullName(..))
 import Text.Blaze.Html.Renderer.Utf8 (renderHtml)
 import Text.Blaze.Html5 ((!))
 import Text.Blaze (toValue, toMarkup)
-import UnliftIO (MonadUnliftIO, askRunInIO)
 
 import qualified Network.Wai.Handler.Warp as Warp
 import qualified Text.Blaze.Html5 as H
@@ -34,29 +29,32 @@ import qualified Text.Blaze.Html5.Attributes as A
 import qualified Data.Text as Text
 import qualified Skylighting as S
 
+import Data.Git (Hash(..), Branch(..))
+import Nix
+  ( Package(..)
+  , Channel(..)
+  , channelBranch
+  , Version(..)
+  , Name(..)
+  , KeyName(..)
+  , FullName(..))
 import App.Storage (Database)
 import qualified App.Storage as Storage
 
 newtype Port = Port Int
     deriving (Show, Eq, Read)
 
-run ::
-    ( MonadIO m
-    , MonadLog (WithSeverity String) m
-    , MonadConc m
-    , MonadUnliftIO m
-    ) => Database -> Port -> m ()
+run :: Database -> Port -> IO ()
 run database (Port port) = do
-  logInfo $ "Running server on port " <> show port
-  runInIO <- askRunInIO
-  liftIO . Warp.run port $ app database runInIO
+  logInfo' $ "Running server on port " <> show port
+  Warp.run port $ app database
 
-app :: MonadIO m => Database -> (m Response -> IO Response) -> Application
-app database runInIO request respond = do
-    response <- runInIO $ case rawPathInfo request of
-        "/"     -> pageHome database request
-        _       -> return pageNotFound
-    respond response
+app :: Database -> Application
+app database request respond = do
+  response <- case rawPathInfo request of
+    "/" -> pageHome database request
+    _   -> return pageNotFound
+  respond response
 
 pageHome :: MonadIO m => Database -> Request -> m Response
 pageHome database request = do
@@ -135,7 +133,6 @@ pageHome database request = do
                         <$> mSearchedPackage
                         <*> mSelectedVersion
                         <*> mSelectedKeyName
-                        <*> mSelectedFullName
                         <*> mSelectedChannel
                         <*> mSelectedRevision
 
@@ -198,9 +195,6 @@ pageHome database request = do
         mSearched = (,) <$> mSelectedChannel <*> mSearchedPackage
 
         mSelectedRevision = Hash <$> queryValueFor revisionKey
-
-        mSelectedFullName = FullName <$> queryValueFor fullNameKey
-
         mSelectedKeyName = KeyName <$> queryValueFor keyNameKey
         mSelectedVersion = Version <$> queryValueFor versionKey
 
@@ -255,8 +249,8 @@ pageHome database request = do
                         , (channelKey, Just $ toChannelBranch channel)
                         ]
 
-        installationInstructions :: Name -> Version -> KeyName -> FullName -> Channel -> Hash -> H.Html
-        installationInstructions (Name name) (Version version) (KeyName keyName) (FullName fullName) channel hash =
+        installationInstructions :: Name -> Version -> KeyName -> Channel -> Hash -> H.Html
+        installationInstructions (Name name) (Version version) (KeyName keyName) channel hash =
             H.div
                 ! A.id instructionsAnchor
                 $ do
@@ -340,7 +334,7 @@ fromChannelBranch :: Text -> Maybe Channel
 fromChannelBranch = flip lookup $ (toChannelBranch &&& id) <$> [minBound..]
 
 toChannelBranch :: Channel -> Text
-toChannelBranch = fromGitBranch . channelBranch
+toChannelBranch = unBranch . channelBranch
 
 revisionURL :: Hash -> Text
 revisionURL (Hash hash) = "https://github.com/NixOS/nixpkgs/archive/" <> hash <> ".tar.gz"

@@ -14,5 +14,5 @@ data Commit = Commit Hash Day
     deriving (Show, Eq, Ord, Generic)
     deriving anyclass (Hashable, ToJSON, FromJSONKey, FromJSON, ToJSONKey)
 
-data Branch = Branch Text
+data Branch = Branch { unBranch :: Text }
     deriving (Show)

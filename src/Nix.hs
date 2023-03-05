@@ -14,10 +14,13 @@ module Nix
   , Revision(..)
   , channelBranch
   , nixpkgsRepo
-  , downloadTo
-  , loadFrom
+  , Downloader
+  , withDownloader
+  , packagesAt
   ) where
 
+import Control.Concurrent.Async (async)
+import Control.Concurrent.MVar (MVar, newMVar, modifyMVar, newEmptyMVar, putMVar, readMVar)
 import Control.Monad.Catch (SomeException(..), handle)
 import Data.Aeson
   ( FromJSON
@@ -30,17 +33,23 @@ import Data.Aeson
   , (.:)
   , (.:?)
   , parseJSON )
+import Control.Monad (when, void)
+import Control.Monad.Trans.Except (runExceptT, ExceptT(..))
+import Data.Bifunctor (first)
 import Data.Hashable (Hashable)
 import Data.Functor ((<&>))
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HMap
-import Data.Text (Text)
+import Data.Text (Text, unpack, pack)
 import GHC.Generics (Generic)
-import Data.Git (Commit)
+import Data.Git (Commit(..), Hash(..))
 import qualified Data.Git as Git
 import qualified GitHub
 import System.Exit (ExitCode(..))
 import System.Process (readCreateProcessWithExitCode, shell, CreateProcess(..))
+import System.IO.Temp (emptyTempFile, withSystemTempDirectory)
 
 import Control.Monad.Log2 (logDebug')
 
@@ -143,6 +152,55 @@ nixpkgsRepo = GitHub.Repository
     }
 
 --------------------------------------------------------------
+
+-- | Manager to ensure efficient download of packages for a revision.
+-- Each commit will be downloaded at most once.
+data Downloader = Downloader
+  { s_storageDir :: FilePath
+  , s_commits :: MVar (Map Commit (MVar (Either BuildError FilePath)))
+    -- ^ We keep only file paths in the cache because keeping the packages
+    -- themselves would use too much memory
+  }
+
+withDownloader
+  :: Maybe FilePath   -- ^ path to store artifacts
+  -> (Downloader -> IO a)
+  -> IO a
+withDownloader mpath act =
+  withPath mpath $ \dir -> do
+  commitsVar <- newMVar mempty
+  act $ Downloader dir commitsVar
+  where
+    withPath Nothing f = withSystemTempDirectory "NIX_VERSIONS" f
+    withPath (Just path) f = f path
+
+-- | An error trying to build a revision
+data BuildError
+    = BuildError Text
+    | JsonDecodeError Text
+    deriving (Show, Eq)
+
+packagesAt :: Downloader -> Commit -> IO (Either BuildError RevisionPackages)
+packagesAt Downloader{s_commits, s_storageDir} commit = do
+  (commitVar, isNew) <- modifyMVar s_commits $ \commitMap ->
+    case Map.lookup commit commitMap of
+      Just var ->
+        return (Map.insert commit var commitMap, (var, False))
+      Nothing -> do
+        var <- newEmptyMVar
+        return (Map.insert commit var commitMap, (var, True))
+
+  -- TODO: Limit concurrency here.
+  when isNew $ void $ async $ do
+      path <- emptyTempFile s_storageDir (unpack $ fromHash hash)
+      mErr <- Nix.downloadTo path commit
+      putMVar commitVar $ maybe (Right path) (Left . BuildError . pack) mErr
+
+  runExceptT $ do
+      path <- ExceptT $ readMVar commitVar
+      ExceptT $ first (JsonDecodeError . pack) <$> Nix.loadFrom path
+  where
+      Commit hash _ = commit
 
 data RawPackage = RawPackage
     { _raw_name :: Name

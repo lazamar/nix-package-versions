@@ -24,9 +24,7 @@ library
       App.Storage
       App.Storage.SQLite
       App.Storage.JSON
-      Control.Monad.LimitedConc
       Control.Monad.Log2
-      Control.Monad.Revisions
       Control.Monad.SQL
       Data.Git
       GitHub
@@ -91,7 +89,7 @@ executable nix-package-versions-exe
       Paths_nix_package_versions
   hs-source-dirs:
       app
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N -O2
+  ghc-options: -Wall -threaded -rtsopts -with-rtsopts=-N -O2
   default-extensions:
       OverloadedStrings NamedFieldPuns
   build-depends:

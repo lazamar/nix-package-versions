@@ -30,14 +30,14 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Time.Calendar (Day, showGregorian)
 import Data.Time.Calendar.WeekDate (toWeekDate, fromWeekDate)
-import Control.Monad.Revisions (MonadRevisions, packagesFor)
 
 import Nix
   ( Revision(..)
   , Channel(..)
   , RevisionPackages
   , nixpkgsRepo
-  , channelBranch )
+  , channelBranch)
+import qualified Nix
 import Data.Git (Commit(..))
 import GitHub (AuthenticatingUser(..))
 import qualified GitHub
@@ -46,13 +46,14 @@ import qualified App.Storage as Storage
 
 -- | Download lists of packages and their versions for commits
 -- between 'to' and 'from' dates and save them to the database.
-savePackageVersionsForPeriod ::
-  ( MonadConc m
-  , MonadIO m
-  , MonadRevisions m
-  )
-  => Database -> AuthenticatingUser -> Day -> Day -> m [Either String String]
-savePackageVersionsForPeriod database gitUser from to = do
+savePackageVersionsForPeriod
+  :: Database
+  -> Nix.Downloader
+  -> AuthenticatingUser
+  -> Day
+  -> Day
+  -> IO [Either String String]
+savePackageVersionsForPeriod database downloader gitUser from to = do
   let channels = [minBound..]
   daysToDownload <- forConcurrently channels $ \channel -> do
       dbRevisions <- liftIO $ Storage.revisions database channel
@@ -64,7 +65,7 @@ savePackageVersionsForPeriod database gitUser from to = do
   where
       maxAttempts = 10
 
-      buildAndSaveDay :: _ => (Channel, Set Revision, Day) -> m [Either String String]
+      buildAndSaveDay :: _ => (Channel, Set Revision, Day) -> IO [Either String String]
       buildAndSaveDay (channel, completed, day) = do
           revisionsOn gitUser 30 channel day >>= \case
               Left err -> return $ [Left err]
@@ -76,8 +77,8 @@ savePackageVersionsForPeriod database gitUser from to = do
                       $ filter (not . (`Set.member` completed))
                       $ dayRevisions
 
-      download :: _ => Revision -> m (Either String RevisionPackages)
-      download (Revision _ commit) = first show <$> packagesFor commit
+      download ::Revision -> IO (Either String RevisionPackages)
+      download (Revision _ commit) = first show <$> Nix.packagesAt downloader commit
 
       daysMissingIn  :: [(Day, Revision, RevisionState)] -> [Day]
       daysMissingIn revisions
@@ -100,7 +101,7 @@ saveToDatabase
   -> Either String RevisionPackages
   -> IO (Either String String)
 saveToDatabase database day revision ePackages =
-  case ePackages  of
+  case ePackages of
     Left err -> do
       logInfoTimed' (msg "Saved invalid" $ Just err) $
         Storage.writeRevisionState database day revision InvalidRevision
