@@ -6,7 +6,7 @@ import Data.Time.Calendar (Day(..))
 import GHC.Generics (Generic)
 
 import Data.Git (Hash)
-import Nix (Name, Channel, Revision, Package)
+import Nix (Package, Channel, Revision, PackageDetails)
 
 -- | Whether all revision entries were added to the table.
 -- Order is important. Success is the max value
@@ -22,11 +22,11 @@ instance FromJSON RevisionState
 
 class Storage s where
   -- read
-  versions :: s -> Channel -> Name -> IO [(Package, Hash, Day)]
+  versions :: s -> Channel -> Package -> IO [(PackageDetails, Hash, Day)]
   revisions :: s -> Channel -> IO [(Day, Revision, RevisionState)]
 
   -- write
-  writePackages :: s -> Day -> Revision -> [Package] -> IO ()
+  writePackages :: s -> Day -> Revision -> [PackageDetails] -> IO ()
   writeRevisionState :: s -> Day -> Revision -> RevisionState -> IO ()
 
 data Database = forall s. Storage s => Database s

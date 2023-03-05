@@ -31,13 +31,13 @@ import qualified Skylighting as S
 
 import Data.Git (Hash(..), Branch(..))
 import Nix
-  ( Package(..)
+  ( PackageDetails(..)
   , Channel(..)
   , channelBranch
   , Version(..)
-  , Name(..)
+  , Package(..)
   , KeyName(..)
-  , FullName(..))
+  , PackageWithVersion(..))
 import App.Storage (Database)
 import qualified App.Storage as Storage
 
@@ -117,7 +117,7 @@ pageHome database request = do
                             H.label "Package name"
                             H.input
                                 ! A.type_ "text"
-                                ! A.value (fromString $ Text.unpack $ maybe "" fromName mSearchedPackage)
+                                ! A.value (fromString $ Text.unpack $ maybe "" unPackage mSearchedPackage)
                                 ! A.name (fromString pkgKey)
                                 ! A.placeholder "Package name"
 
@@ -188,10 +188,10 @@ pageHome database request = do
             val <- queryValueFor channelKey
             fromChannelBranch val
 
-        mSearchedPackage :: Maybe Name
-        mSearchedPackage = Name <$> queryValueFor pkgKey
+        mSearchedPackage :: Maybe Package
+        mSearchedPackage = Package <$> queryValueFor pkgKey
 
-        mSearched :: Maybe (Channel, Name)
+        mSearched :: Maybe (Channel, Package)
         mSearched = (,) <$> mSelectedChannel <*> mSearchedPackage
 
         mSelectedRevision = Hash <$> queryValueFor revisionKey
@@ -220,37 +220,37 @@ pageHome database request = do
                        then H.p "No results found"
                        else mapM_ (toRow channel) $ zip [0..] results
 
-        toRow :: Channel -> (Int, (Package, Hash, Day)) -> H.Html
+        toRow :: Channel -> (Int, (PackageDetails, Hash, Day)) -> H.Html
         toRow channel (ix, (package, hash, day)) =
             H.tr
                 ! (if odd ix then A.class_ "pure-table-odd" else mempty)
                 $ do
-                H.td $ H.text $ fromName $ name package
-                H.td $ H.text $ fromVersion $ version package
+                H.td $ H.text $ unPackage $ name package
+                H.td $ H.text $ unVersion $ version package
                 H.td $ H.a
                     ! A.href (toValue $ revisionLink channel hash package)
                     ! A.title "Click for installation instructions"
                     $ H.text $ fromHash hash
                 H.td $ toMarkup $ showGregorian day
 
-        revisionLink :: Channel -> Hash -> Package -> Text.Text
-        revisionLink  channel (Hash hash) Package{name,version,fullName,keyName} =
+        revisionLink :: Channel -> Hash -> PackageDetails -> Text.Text
+        revisionLink  channel (Hash hash) PackageDetails{name,version,fullName,keyName} =
             "./" <> query <> "#" <> instructionsAnchor
             where
                 query
                     = decodeUtf8
                     $ renderQuery True
                     $ queryTextToQuery
-                        [ (pkgKey, Just $ fromName name)
-                        , (versionKey, Just $ fromVersion version)
-                        , (fullNameKey, Just $ fromFullName fullName)
+                        [ (pkgKey, Just $ unPackage name)
+                        , (versionKey, Just $ unVersion version)
+                        , (fullNameKey, Just $ unPackageWithVersion fullName)
                         , (keyNameKey, Just $ fromKeyName keyName)
                         , (revisionKey, Just hash)
                         , (channelKey, Just $ toChannelBranch channel)
                         ]
 
-        installationInstructions :: Name -> Version -> KeyName -> Channel -> Hash -> H.Html
-        installationInstructions (Name name) (Version version) (KeyName keyName) channel hash =
+        installationInstructions :: Package -> Version -> KeyName -> Channel -> Hash -> H.Html
+        installationInstructions (Package name) (Version version) (KeyName keyName) channel hash =
             H.div
                 ! A.id instructionsAnchor
                 $ do

@@ -20,13 +20,13 @@ import Database.SQLite.Simple.ToField (ToField(..))
 
 import Nix
   ( Version(..)
-  , FullName(..)
+  , PackageWithVersion(..)
   , KeyName(..)
-  , Name(..)
+  , Package(..)
   , Channel
   , Revision(..)
   , RevisionPackages
-  , Package(..))
+  , PackageDetails(..))
 
 import Data.Git (Hash(..), Commit(..))
 import App.Storage (Storage, Database(..), RevisionState(..))
@@ -101,7 +101,7 @@ ensureTablesAreCreated = do
 -- | Retrieve all versions available for a package
 -- This will be on the order of the tens, or maximum the
 -- hundreds, so it is fine to just return all of them
-versions :: MonadSQL m => Channel -> Name -> m [(Package, Hash, Day)]
+versions :: MonadSQL m => Channel -> Package -> m [(PackageDetails, Hash, Day)]
 versions channel name = do
     results <- queryNamed
         (fromString $ unwords
@@ -152,7 +152,7 @@ saveRevision represents revision state =
         (SQLRevision represents revision state)
 
 -- | Save the version info of a package in the database
-saveVersions :: (MonadConc m, MonadSQL m) => Revision -> Day -> [Package] -> m ()
+saveVersions :: (MonadConc m, MonadSQL m) => Revision -> Day -> [PackageDetails] -> m ()
 saveVersions (Revision channel (Commit hash _)) represents packages  = do
     -- This should ideally happen inside of a transaction, but that causes more trouble
     -- than it is woth. It causes errors with multi-threaded inserts, as it says that
@@ -162,7 +162,7 @@ saveVersions (Revision channel (Commit hash _)) represents packages  = do
     toInsert <- (map fst . filter snd) <$> mapConcurrently (\p -> (p,) <$> needsInserting p) packages
     void $ traverse insert toInsert
     where
-        needsInserting (Package{name, version}) = do
+        needsInserting (PackageDetails{name, version}) = do
             pkgs <- queryNamed
                 ("SELECT * FROM " <> db_PACKAGE_NEW <> " WHERE NAME = :name AND VERSION = :version AND CHANNEL = :channel")
                 [ ":name"    := name
@@ -204,11 +204,11 @@ instance ToRow SQLRevision where
         ]
 
 -- | One row from db_PACKAGE_NEW
-data SQLPackage = SQLPackage Package Channel Hash Day
+data SQLPackage = SQLPackage PackageDetails Channel Hash Day
     deriving (Show, Eq)
 
 instance ToRow SQLPackage where
-    toRow (SQLPackage (Package name version keyName fullName description) channel hash represents) =
+    toRow (SQLPackage (PackageDetails name version keyName fullName description) channel hash represents) =
         [ toField name          -- NAME
         , toField version       -- VERSION
         , toField keyName       -- KEY_NAME
@@ -232,7 +232,7 @@ instance FromRow SQLPackage where
         where
             create name version keyName fullName channel hash description represents =
                 SQLPackage
-                    (Package name version keyName fullName description)
+                    (PackageDetails name version keyName fullName description)
                     channel
                     hash
                     represents
@@ -243,11 +243,11 @@ instance ToField RevisionState where
 instance FromField RevisionState where
     fromField = fmap read  . fromField
 
-instance ToField Name where
-    toField = SQLText . fromName
+instance ToField Package where
+    toField = SQLText . unPackage
 
-instance FromField Name where
-    fromField = fmap Name . fromField
+instance FromField Package where
+    fromField = fmap Package . fromField
 
 instance ToField KeyName where
     toField = SQLText . fromKeyName
@@ -255,11 +255,11 @@ instance ToField KeyName where
 instance FromField KeyName where
     fromField = fmap KeyName . fromField
 
-instance ToField FullName where
-    toField = SQLText . fromFullName
+instance ToField PackageWithVersion where
+    toField = SQLText . unPackageWithVersion
 
-instance FromField FullName where
-    fromField = fmap FullName . fromField
+instance FromField PackageWithVersion where
+    fromField = fmap PackageWithVersion . fromField
 
 instance ToField Hash where
     toField = SQLText . fromHash
@@ -274,7 +274,7 @@ instance FromField Channel where
     fromField = fmap read . fromField
 
 instance ToField Version where
-    toField = SQLText . fromVersion
+    toField = SQLText . unVersion
 
 instance FromField Version where
     fromField = fmap Version . fromField

@@ -3,13 +3,12 @@
 {-# LANGUAGE DerivingStrategies #-}
 
 module Nix
-  ( Name(..)
-  , FullName(..)
+  ( Package(..)
+  , PackageWithVersion(..)
   , KeyName(..)
   , Version(..)
-  , Task(..)
   , RevisionPackages
-  , Package(..)
+  , PackageDetails(..)
   , Channel(..)
   , Revision(..)
   , channelBranch
@@ -50,24 +49,19 @@ newtype KeyName = KeyName { fromKeyName :: Text }
     deriving newtype (Hashable, FromJSON, FromJSONKey, ToJSON, ToJSONKey)
 
 -- | Usually name + version. Used to install a package with "nix-env -i"
-newtype FullName = FullName { fromFullName :: Text }
+newtype PackageWithVersion = PackageWithVersion { unPackageWithVersion :: Text }
     deriving (Show, Eq, Generic)
     deriving newtype (Hashable, FromJSON, ToJSON)
 
 --  | The name of package. e.g. nodejs
-newtype Name = Name { fromName :: Text }
+newtype Package = Package { unPackage :: Text }
     deriving (Show, Eq, Generic)
     deriving newtype (Hashable, FromJSON, ToJSON, FromJSONKey, ToJSONKey)
 
 -- | A package version. e.g. v8.10-rc2
-newtype Version = Version { fromVersion :: Text }
+newtype Version = Version { unVersion :: Text }
     deriving (Show, Eq, Generic)
     deriving newtype (Monoid, Semigroup, FromJSON, ToJSON, Hashable)
-
--- | Asynchronous tasks
-data Task
-    = BuildNixRevision
-    deriving (Show, Eq, Ord)
 
 -- | A Nix distribution channel.
 -- These are the channels we care about. There are many other channels that
@@ -123,14 +117,14 @@ data Revision = Revision
     , commit   :: Commit
     } deriving (Show, Generic, Ord, Eq)
 
-type RevisionPackages = [Package]
+type RevisionPackages = [PackageDetails]
 
 -- | The information we have about a nix package in one revision
-data Package = Package
-    { name :: Name
+data PackageDetails = PackageDetails
+    { name :: Package
     , version :: Version
     , keyName :: KeyName
-    , fullName :: FullName
+    , fullName :: PackageWithVersion
     , description :: Maybe Text
     }
     deriving (Show, Generic, Eq)
@@ -161,17 +155,17 @@ packagesAt commit@(Commit hash _) =
     Nothing -> first (JsonDecodeError . pack) <$> Nix.loadFrom path
 
 data RawPackage = RawPackage
-    { _raw_name :: Name
+    { _raw_name :: Package
     , _raw_version :: Version
-    , _raw_fullName :: FullName
+    , _raw_fullName :: PackageWithVersion
     , _raw_description :: (Maybe Text)
     }
 
 instance FromJSON RawPackage where
     parseJSON = withObject "RawPackage" $ \v -> RawPackage
-       <$> (v .: "pname" <&> Name)
+       <$> (v .: "pname" <&> Package)
        <*> (v .: "version" <&> Version)
-       <*> (v .: "name" <&> FullName)
+       <*> (v .: "name" <&> PackageWithVersion)
        <*> (v .:? "meta" >>= maybe (pure Nothing) (.:? "description"))
 
 -- | Download info for a revision and build a list of all packages in it.
@@ -231,12 +225,12 @@ loadFrom path =
   where
     exceptionToEither (SomeException err) = return $ Left $ show err
 
-    toRevisionPackages :: HashMap KeyName RawPackage -> [Package]
+    toRevisionPackages :: HashMap KeyName RawPackage -> [PackageDetails]
     toRevisionPackages = map toPackage . HMap.toList
 
-    toPackage :: (KeyName, RawPackage) -> Package
+    toPackage :: (KeyName, RawPackage) -> PackageDetails
     toPackage (keyName, RawPackage name version fullName description) =
-        Package
+        PackageDetails
             name
             version
             keyName

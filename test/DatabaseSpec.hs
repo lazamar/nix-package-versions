@@ -14,7 +14,7 @@ import qualified App.Storage.SQLite as SQLite
 import qualified App.Storage.JSON as JSON
 import Nix
   ( Revision(..)
-  , Package(..)
+  , PackageDetails(..)
   , Channel(..)
   , RevisionPackages
   , Version(..)
@@ -47,7 +47,7 @@ testDatabase overDatabase = do
   let pname = Name "my-package"
       keyName = KeyName "my-package"
       fullName = FullName "my-package"
-      pkg   = Package pname (Version "1.0") keyName fullName Nothing
+      pkg   = PackageDetails pname (Version "1.0") keyName fullName Nothing
       commit = Commit (Hash "hash") (ModifiedJulianDay 10)
       packages = [pkg]
       revision = Revision defaultChannel  commit
@@ -70,7 +70,7 @@ testDatabase overDatabase = do
 
   it "Searching a package in a channel doesn't return results from a different channel" $ do
     overDatabase $ \db -> do
-        let otherPkg      = Package pname (Version "other-version") keyName fullName Nothing
+        let otherPkg      = PackageDetails pname (Version "other-version") keyName fullName Nothing
             otherChannel  = succ defaultChannel
             otherCommit = Commit (Hash "otherHash") (ModifiedJulianDay 10)
             otherRevision = Revision otherChannel otherCommit
@@ -111,7 +111,7 @@ testDatabase overDatabase = do
         v1 `shouldBe` [(pkg, hash, newDay)]
         v2 `shouldBe` [(pkg, hash, newDay)]
 
-getPackage :: (Package, Hash, Day) -> Package
+getPackage :: (PackageDetails, Hash, Day) -> Package
 getPackage (p,_,_) = p
 
 

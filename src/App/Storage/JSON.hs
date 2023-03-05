@@ -15,7 +15,7 @@ import Data.Time.Calendar (Day)
 import System.Directory (doesFileExist, createDirectoryIfMissing)
 import System.FilePath (takeDirectory)
 
-import Nix (Name, Package(..), Revision(..), Channel(..))
+import Nix (Package, PackageDetails(..), Revision(..), Channel(..))
 import Data.Git (Commit(..))
 import App.Storage
 
@@ -26,7 +26,7 @@ data JSON = JSON
 
 data Content = Content
   { c_revisions :: HashMap Channel (HashMap Commit (Day, RevisionState))
-  , c_packages :: HashMap Channel (HashMap Name (HashMap Commit (Package, Day)))
+  , c_packages :: HashMap Channel (HashMap Package (HashMap Commit (PackageDetails, Day)))
   }
   deriving (Generic)
 
