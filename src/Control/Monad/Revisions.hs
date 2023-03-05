@@ -30,12 +30,12 @@ import Control.Monad.Trans.Reader (ReaderT, ask, runReaderT)
 import Data.Bifunctor (first)
 import Data.Map (Map)
 import Data.Text (Text, pack, unpack)
-import Nix.Versions.Types (Task(..))
 import Nix.Revision (RevisionPackages)
 import System.IO.Temp (emptyTempFile, withSystemTempDirectory)
 
 import Data.Git (Hash(..), Commit(..))
 import qualified Data.Map as Map
+import Nix (Task(..))
 import qualified Nix.Revision as Revision
 
 -- | A monad that takes care of fetching packages for a commit from Nix

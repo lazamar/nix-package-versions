@@ -2,23 +2,18 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DerivingStrategies #-}
 
-{-| This module defines the main types used to convey package version information
--}
-module Nix.Versions.Types
-    ( Name(..)
-    , FullName(..)
-    , KeyName(..)
-    , Version(..)
-    , Task(..)
-    ) where
+module Nix
+  ( Name(..)
+  , FullName(..)
+  , KeyName(..)
+  , Version(..)
+  , Task(..)
+  ) where
 
 import Data.Aeson (FromJSON, FromJSONKey, ToJSON, ToJSONKey)
 import Data.Hashable (Hashable)
 import Data.Text (Text)
 import GHC.Generics (Generic)
-
-newtype CachePath = CachePath FilePath
-    deriving (Show)
 
 -- | The name of the key in the nixpkgs expression that identifies the package.
 newtype KeyName = KeyName { fromKeyName :: Text }

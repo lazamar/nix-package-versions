@@ -44,12 +44,12 @@ import Data.HashMap.Strict (HashMap)
 import Data.Text (Text)
 import Data.Time.Calendar (Day)
 import GHC.Generics (Generic)
-import Nix.Versions.Types (KeyName(..), FullName(..), Name(..), Version(..))
 import System.Exit (ExitCode(..))
 import System.Process (readCreateProcessWithExitCode, shell, CreateProcess(..))
 
 import Data.Git (Commit(..), Branch(..))
 import GitHub (AuthenticatingUser(..), Repository(..), archiveUrl, commitsUntil)
+import Nix (KeyName(..), FullName(..), Name(..), Version(..))
 
 import qualified Data.HashMap.Strict as HMap
 

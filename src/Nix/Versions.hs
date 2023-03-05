@@ -42,7 +42,6 @@ import qualified App.Storage as Storage
 -- between 'to' and 'from' dates and save them to the database.
 savePackageVersionsForPeriod ::
   ( MonadConc m
-  , MonadFail m
   , MonadIO m
   , MonadRevisions m
   )

@@ -15,7 +15,7 @@ import Data.Time.Calendar (Day)
 import System.Directory (doesFileExist, createDirectoryIfMissing)
 import System.FilePath (takeDirectory)
 
-import Nix.Versions.Types (Name)
+import Nix (Name)
 import Data.Git (Commit(..))
 import Nix.Revision (Package(..), Revision(..), Channel(..))
 import App.Storage
