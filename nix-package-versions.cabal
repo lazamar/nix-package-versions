@@ -30,7 +30,6 @@ library
       Control.Monad.SQL
       Data.Git
       GitHub
-      Nix.Revision
       Nix.Versions
       Nix
   other-modules:
@@ -45,6 +44,7 @@ library
       DeriveAnyClass
       DerivingStrategies
       GeneralizedNewtypeDeriving
+      LambdaCase
   ghc-options: -Wall -Wno-partial-type-signatures
   build-depends:
       aeson

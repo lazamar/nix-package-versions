@@ -30,13 +30,12 @@ import Control.Monad.Trans.Reader (ReaderT, ask, runReaderT)
 import Data.Bifunctor (first)
 import Data.Map (Map)
 import Data.Text (Text, pack, unpack)
-import Nix.Revision (RevisionPackages)
 import System.IO.Temp (emptyTempFile, withSystemTempDirectory)
 
 import Data.Git (Hash(..), Commit(..))
 import qualified Data.Map as Map
-import Nix (Task(..))
-import qualified Nix.Revision as Revision
+import Nix (Task(..), RevisionPackages)
+import qualified Nix
 
 -- | A monad that takes care of fetching packages for a commit from Nix
 -- at most once and limiting the amount of concurrent requests
@@ -85,12 +84,12 @@ instance
 
         when isNew $ void $ asyncTask BuildNixRevision $ do
             path <- liftIO $ emptyTempFile s_storageDir (unpack $ fromHash hash)
-            mErr <- Revision.downloadTo path commit
+            mErr <- liftIO $ Nix.downloadTo path commit
             putMVar commitVar $ maybe (Right path) (Left . BuildError . pack) mErr
 
         runExceptT $ do
             path <- ExceptT $ readMVar commitVar
-            ExceptT $ liftIO $ first (JsonDecodeError . pack) <$> Revision.loadFrom path
+            ExceptT $ liftIO $ first (JsonDecodeError . pack) <$> Nix.loadFrom path
         where
             Commit hash _ = commit
 

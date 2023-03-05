@@ -30,11 +30,17 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Time.Calendar (Day, showGregorian)
 import Data.Time.Calendar.WeekDate (toWeekDate, fromWeekDate)
-import Nix.Revision (Revision(..), Channel(..), revisionsOn, RevisionPackages)
 import Control.Monad.Revisions (MonadRevisions, packagesFor)
 
+import Nix
+  ( Revision(..)
+  , Channel(..)
+  , RevisionPackages
+  , nixpkgsRepo
+  , channelBranch )
 import Data.Git (Commit(..))
 import GitHub (AuthenticatingUser(..))
+import qualified GitHub
 import App.Storage (Database, RevisionState(..))
 import qualified App.Storage as Storage
 
@@ -208,4 +214,11 @@ limitedConcurrency maxConcurrency actions = do
 
     asyncs <- foldM runWhenPossible [] actions
     traverse wait asyncs
+
+-- | Last revisions registered for given day
+revisionsOn :: MonadIO m => AuthenticatingUser -> Int -> Channel -> Day -> m (Either String [Revision])
+revisionsOn guser count channel day
+    = liftIO
+    $ fmap (fmap $ fmap $ Revision channel)
+    $ GitHub.commitsUntil guser count nixpkgsRepo (channelBranch channel) day
 

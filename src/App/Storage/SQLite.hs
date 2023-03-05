@@ -26,8 +26,15 @@ import Database.SQLite.Simple (ToRow(toRow), FromRow(fromRow), SQLData(..), Name
 import Database.SQLite.Simple.FromField (FromField(..))
 import Database.SQLite.Simple.ToField (ToField(..))
 
-import Nix (Version(..), FullName(..), KeyName(..), Name(..))
-import Nix.Revision (Channel, Revision(..), RevisionPackages, Package(..))
+import Nix
+  ( Version(..)
+  , FullName(..)
+  , KeyName(..)
+  , Name(..)
+  , Channel
+  , Revision(..)
+  , RevisionPackages
+  , Package(..))
 
 import Data.Git (Hash(..), Commit(..))
 import App.Storage (Storage, Database(..), RevisionState(..))

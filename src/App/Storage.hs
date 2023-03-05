@@ -6,8 +6,7 @@ import Data.Time.Calendar (Day(..))
 import GHC.Generics (Generic)
 
 import Data.Git (Hash)
-import Nix.Revision (Channel, Revision, Package)
-import Nix (Name)
+import Nix (Name, Channel, Revision, Package)
 
 -- | Whether all revision entries were added to the table.
 -- Order is important. Success is the max value
