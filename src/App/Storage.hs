@@ -5,8 +5,9 @@ import Data.Aeson (FromJSON, ToJSON)
 import Data.Time.Calendar (Day(..))
 import GHC.Generics (Generic)
 
+import Data.Git (Hash)
 import Nix.Revision (Channel, Revision, Package)
-import Nix.Versions.Types (Name, Hash)
+import Nix.Versions.Types (Name)
 
 -- | Whether all revision entries were added to the table.
 -- Order is important. Success is the max value

@@ -28,6 +28,8 @@ library
       Control.Monad.Log2
       Control.Monad.Revisions
       Control.Monad.SQL
+      Data.Git
+      GitHub
       Nix.Revision
       Nix.Versions
       Nix.Versions.Types
@@ -42,6 +44,7 @@ library
       DeriveGeneric
       DeriveAnyClass
       DerivingStrategies
+      GeneralizedNewtypeDeriving
   ghc-options: -Wall -Wno-partial-type-signatures
   build-depends:
       aeson

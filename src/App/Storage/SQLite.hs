@@ -27,8 +27,9 @@ import Database.SQLite.Simple.FromField (FromField(..))
 import Database.SQLite.Simple.ToField (ToField(..))
 
 import Nix.Revision (Channel, Revision(..), RevisionPackages, Package(..))
-import Nix.Versions.Types (Hash(..), Version(..), FullName(..), KeyName(..), Name(..), Commit(..))
+import Nix.Versions.Types (Version(..), FullName(..), KeyName(..), Name(..))
 
+import Data.Git (Hash(..), Commit(..))
 import App.Storage (Storage, Database(..), RevisionState(..))
 import qualified App.Storage as Storage
 

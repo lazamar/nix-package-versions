@@ -32,9 +32,10 @@ import qualified Data.Set as Set
 import Data.Time.Calendar (Day, showGregorian)
 import Data.Time.Calendar.WeekDate (toWeekDate, fromWeekDate)
 import Nix.Revision (Revision(..), Channel(..), revisionsOn, RevisionPackages)
-import Nix.Versions.Types (Commit(..), GitHubUser)
 import Control.Monad.Revisions (MonadRevisions, packagesFor)
 
+import Data.Git (Commit(..))
+import GitHub (AuthenticatingUser(..))
 import App.Storage (Database, RevisionState(..))
 import qualified App.Storage as Storage
 
@@ -47,7 +48,7 @@ savePackageVersionsForPeriod ::
     , MonadIO m
     , MonadRevisions m
     )
-    => Database -> GitHubUser -> Day -> Day -> m [Either String String]
+    => Database -> AuthenticatingUser -> Day -> Day -> m [Either String String]
 savePackageVersionsForPeriod database gitUser from to = do
     let channels = [minBound..]
     daysToDownload <- forConcurrently channels $ \channel -> do
@@ -62,13 +63,12 @@ savePackageVersionsForPeriod database gitUser from to = do
 
         buildAndSaveDay :: _ => (Channel, Set Revision, Day) -> m [Either String String]
         buildAndSaveDay (channel, completed, day) = do
-            revisionsOn gitUser channel day >>= \case
+            revisionsOn gitUser maxAttempts channel day >>= \case
                 Left err -> return $ [Left err]
                 Right dayRevisions ->
                     -- We will try only a few revisions. If they don't succeed we give up on that revision.
                     tryInSequence
                         $ fmap (\r -> saveToDatabase database day r =<< download r)
-                        $ take maxAttempts
                         $ filter (not . (`Set.member` completed))
                         $ dayRevisions
 

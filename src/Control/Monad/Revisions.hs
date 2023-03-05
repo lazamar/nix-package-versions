@@ -30,10 +30,11 @@ import Control.Monad.Trans.Reader (ReaderT, ask, runReaderT)
 import Data.Bifunctor (first)
 import Data.Map (Map)
 import Data.Text (Text, pack, unpack)
-import Nix.Versions.Types (Hash(..), Commit(..), Task(..))
+import Nix.Versions.Types (Task(..))
 import Nix.Revision (RevisionPackages)
 import System.IO.Temp (emptyTempFile, withSystemTempDirectory)
 
+import Data.Git (Hash(..), Commit(..))
 import qualified Data.Map as Map
 import qualified Nix.Revision as Revision
 

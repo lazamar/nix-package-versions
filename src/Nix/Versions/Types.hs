@@ -9,25 +9,13 @@ module Nix.Versions.Types
     , FullName(..)
     , KeyName(..)
     , Version(..)
-    , Hash(..)
-    , Commit(..)
-    , GitHubUser(..)
     , Task(..)
     ) where
 
 import Data.Aeson (FromJSON, FromJSONKey, ToJSON, ToJSONKey)
 import Data.Hashable (Hashable)
 import Data.Text (Text)
-import Data.ByteString (ByteString)
-import Data.Time.Calendar (Day)
 import GHC.Generics (Generic)
-
-
-data GitHubUser = GitHubUser
-    { g_username :: ByteString
-    , g_authToken :: ByteString
-    }
-    deriving (Show)
 
 newtype CachePath = CachePath FilePath
     deriving (Show)
@@ -51,15 +39,6 @@ newtype Name = Name { fromName :: Text }
 newtype Version = Version { fromVersion :: Text }
     deriving (Show, Eq, Generic)
     deriving newtype (Monoid, Semigroup, FromJSON, ToJSON, Hashable)
-
--- | A commit hash
-newtype Hash = Hash { fromHash :: Text }
-    deriving (Eq, Show, Generic, Ord)
-    deriving newtype (Hashable, FromJSON, ToJSON)
-
-data Commit = Commit Hash Day
-    deriving (Show, Eq, Ord, Generic)
-    deriving anyclass (Hashable, ToJSON, FromJSONKey, FromJSON, ToJSONKey)
 
 -- | Asynchronous tasks
 data Task

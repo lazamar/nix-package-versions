@@ -22,10 +22,9 @@ module Nix.Revision
     , RevisionPackages
     , Package(..)
     , Channel(..)
-    , GitBranch(..)
     ) where
 
-import Control.Monad.Catch (SomeException(..), handle, tryJust)
+import Control.Monad.Catch (SomeException(..), handle)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Log (MonadLog, WithSeverity, logDebug)
 import Data.Aeson
@@ -41,16 +40,17 @@ import Data.Aeson
   , parseJSON )
 import Data.Functor ((<&>))
 import Data.Hashable (Hashable)
-import Data.List (partition)
 import Data.HashMap.Strict (HashMap)
-import Data.Text (unpack, Text)
-import Data.Time.Calendar (Day, showGregorian)
+import Data.Text (Text)
+import Data.Time.Calendar (Day)
 import GHC.Generics (Generic)
-import Nix.Versions.Types (GitHubUser(..), Hash(..), KeyName(..), FullName(..), Name(..), Version(..), Commit(..))
+import Nix.Versions.Types (KeyName(..), FullName(..), Name(..), Version(..))
 import System.Exit (ExitCode(..))
 import System.Process (readCreateProcessWithExitCode, shell, CreateProcess(..))
 
-import qualified Network.HTTP.Req as Req
+import Data.Git (Commit(..), Branch(..))
+import GitHub (AuthenticatingUser(..), Repository(..), archiveUrl, commitsUntil)
+
 import qualified Data.HashMap.Strict as HMap
 
 -- | A Nix distribution channel.
@@ -159,7 +159,7 @@ downloadTo filePath commit
         -- them at destination
         command destination =
                 "nix-env -qaP --json -f "
-                <> commitUrl gnixpkgs commit
+                <> archiveUrl gnixpkgs commit
                 <> " --arg config '" <> config <> "'"
                 <> " >" <> destination
 
@@ -189,20 +189,20 @@ downloadTo filePath commit
 -- GitHub + Nix
 
 -- | Last revisions registered for given day
-revisionsOn :: MonadIO m => GitHubUser -> Channel -> Day -> m (Either String [Revision])
-revisionsOn guser channel day
+revisionsOn :: MonadIO m => AuthenticatingUser -> Int -> Channel -> Day -> m (Either String [Revision])
+revisionsOn guser count channel day
     = liftIO
     $ fmap (fmap $ fmap $ Revision channel)
-    $ commitsUntil guser gnixpkgs (channelBranch channel) day
+    $ commitsUntil guser count gnixpkgs (channelBranch channel) day
 
-gnixpkgs :: GitHubRepo
-gnixpkgs = GitHubRepo
+gnixpkgs :: Repository
+gnixpkgs = Repository
     { g_user = "NixOS"
     , g_repo = "nixpkgs"
     }
 
-channelBranch :: Channel -> GitBranch
-channelBranch = GitBranch . \case
+channelBranch :: Channel -> Branch
+channelBranch = Branch . \case
     Nixpkgs_unstable     -> "nixpkgs-unstable"
     Nixpkgs_20_03_darwin -> "nixpkgs-20.03-darwin"
     Nixpkgs_19_09_darwin -> "nixpkgs-19.09-darwin"
@@ -222,70 +222,3 @@ channelBranch = GitBranch . \case
     Nixos_18_03          -> "nixos-18.03"
     Nixos_17_09          -> "nixos-17.09"
     Nixos_17_03          -> "nixos-17.03"
-
--------------------------------------------------------------------------------
--- GitHub
-
--- | Fetch a list of commits until end of Day
--- Sorted oldest to newest
--- Verified commits appear earlier in the list
-commitsUntil :: GitHubUser -> GitHubRepo -> GitBranch -> Day -> IO (Either String [Commit])
-commitsUntil (GitHubUser guser gtoken) grepo (GitBranch branch) day = do
-    response <-
-        tryJust isHttpException
-        $ fmap Req.responseBody
-        $ Req.runReq Req.defaultHttpConfig
-        $ Req.req Req.GET url Req.NoReqBody Req.jsonResponse options
-
-    return $ either Left (Right . fmap g_commit . rearrange) response
-    where
-        -- | Order from oldest to newest and move verified commits to the top
-        -- so that they may be used first.
-        -- Some commits don't build successfully, the prioritisation of
-        -- verified commits tries to mitigate that problem.
-        rearrange :: [GitHubCommit] -> [GitHubCommit]
-        rearrange = ((++) <$> fst <*> snd) . partition g_verified . reverse
-
-        options = Req.header "User-Agent" guser
-               <> Req.queryParam "until" (Just $ showGregorian day <> "T23:59:59Z")
-               <> Req.queryParam "sha" (Just branch)
-               <> Req.basicAuth guser gtoken
-
-        url = Req.https "api.github.com"
-            Req./: "repos"
-            Req./: g_user grepo
-            Req./: g_repo grepo
-            Req./: "commits"
-
-        isHttpException :: Req.HttpException -> Maybe String
-        isHttpException = Just . show
-
-data GitHubRepo = GitHubRepo
-    { g_user :: Text
-    , g_repo :: Text
-    }
-
-data GitHubCommit = GitHubCommit
-    { g_verified :: Bool
-    , g_commit :: Commit
-    }
-
-newtype GitBranch = GitBranch { fromGitBranch :: Text }
-
-instance FromJSON GitHubCommit where
-    parseJSON = withObject "GitHubCommit " $ \v ->
-        construct
-        <$> (v .: "sha")
-        <*> (v .: "commit" >>= (.: "committer") >>= (.: "date"))
-        <*> (v .: "commit" >>= (.: "verification") >>= (.: "verified"))
-       where
-           construct sha date verified = GitHubCommit verified $ Commit (Hash sha) (readGregorian date)
-
-           readGregorian :: String -> Day
-           readGregorian = read . take 10
-
-type Url = String
-
-commitUrl :: GitHubRepo -> Commit -> Url
-commitUrl (GitHubRepo user repo) (Commit (Hash hash) _)
-    = unpack $ "https://github.com/" <> user <> "/" <> repo <> "/archive/" <> hash <> ".tar.gz"
