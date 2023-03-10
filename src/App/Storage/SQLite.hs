@@ -29,7 +29,7 @@ import Nix
   , PackageDetails(..))
 
 import Data.Git (Hash(..), Commit(..))
-import App.Storage (Storage, Database(..), RevisionState(..))
+import App.Storage (Storage, Database(..), CommitState(..))
 import qualified App.Storage as Storage
 
 import qualified Database.SQLite.Simple as SQL
@@ -121,12 +121,12 @@ versions channel name = do
 
 -- | Retrieve all revisions available in the database
 -- This will be between one hundred and one thousand.
-revisions :: MonadSQL m => Channel -> m [(Day, Revision, RevisionState)]
+revisions :: MonadSQL m => Channel -> m [(Day, Revision, CommitState)]
 revisions channel = do
     results <- query ("SELECT * FROM " <> db_REVISION_NEW <> " WHERE CHANNEL = ?") [channel]
     return $ fromSQLRevision <$> results
 
-fromSQLRevision :: SQLRevision -> (Day, Revision, RevisionState)
+fromSQLRevision :: SQLRevision -> (Day, Revision, CommitState)
 fromSQLRevision (SQLRevision day revision state) = (day, revision, state)
 
 -------------------------------------------------------------------------------
@@ -145,7 +145,7 @@ saveRevisionWithPackages represents revision packages =
 
 -- | When there is a problem building the revision this function allows us
 -- to record that in the database so that later we don't try to build it again
-saveRevision :: MonadSQL m => Day -> Revision -> RevisionState -> m ()
+saveRevision :: MonadSQL m => Day -> Revision -> CommitState -> m ()
 saveRevision represents revision state =
     execute
         ("INSERT OR REPLACE INTO " <> db_REVISION_NEW <> " VALUES (?,?,?,?,?)")
@@ -180,7 +180,7 @@ saveVersions (Revision channel (Commit hash _)) represents packages  = do
             (SQLPackage pkg channel hash represents)
 
 -- | One row from db_REVISION_NEW
-data SQLRevision = SQLRevision Day Revision RevisionState
+data SQLRevision = SQLRevision Day Revision CommitState
 
 instance FromRow SQLRevision where
     fromRow = construct
@@ -190,7 +190,7 @@ instance FromRow SQLRevision where
         <*> SQL.field
         <*> SQL.field
         where
-            construct :: Hash -> Day -> Channel -> Day -> RevisionState -> SQLRevision
+            construct :: Hash -> Day -> Channel -> Day -> CommitState -> SQLRevision
             construct hash date channel represents state =
                 SQLRevision represents (Revision channel (Commit hash date)) state
 
@@ -237,10 +237,10 @@ instance FromRow SQLPackage where
                     hash
                     represents
 
-instance ToField RevisionState where
+instance ToField CommitState where
     toField =  SQLText . pack . show
 
-instance FromField RevisionState where
+instance FromField CommitState where
     fromField = fmap read  . fromField
 
 instance ToField Package where

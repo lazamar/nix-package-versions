@@ -26,6 +26,7 @@ library
       App.Storage.JSON
       App.Update
       Control.Monad.SQL
+      Control.Concurrent.Extra
       Data.Git
       GitHub
       Nix
@@ -56,6 +57,7 @@ library
     , containers
     , directory
     , exceptions
+    , extra
     , filepath
     , hashable
     , hspec
@@ -71,6 +73,7 @@ library
     , req
     , skylighting
     , sqlite-simple
+    , stm
     , temporary
     , text
     , time

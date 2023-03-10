@@ -5,29 +5,33 @@ import Data.Aeson (FromJSON, ToJSON)
 import Data.Time.Calendar (Day(..))
 import GHC.Generics (Generic)
 
-import Data.Git (Hash)
+import Data.Git (Hash, Commit)
 import Nix (Package, Channel, Revision, PackageDetails)
 
 -- | Whether all revision entries were added to the table.
 -- Order is important. Success is the max value
-data RevisionState
+data CommitState
     = PreDownload        -- ^ We are still to start the download and handling of this state
     | Incomplete         -- ^ The process of adding packages to the DB was started but not finished
     | InvalidRevision    -- ^ This revision cannot be built. It is not worth trying again.
     | Success            -- ^ All revision packages were successfully added to the DB
     deriving (Show, Eq, Enum, Read, Ord, Generic)
 
-instance ToJSON RevisionState
-instance FromJSON RevisionState
+instance ToJSON CommitState
+instance FromJSON CommitState
 
 class Storage s where
   -- read
   versions :: s -> Channel -> Package -> IO [(PackageDetails, Hash, Day)]
-  revisions :: s -> Channel -> IO [(Day, Revision, RevisionState)]
+  revisions :: s -> Channel -> IO [(Day, Revision, CommitState)]
 
   -- write
   writePackages :: s -> Day -> Revision -> [PackageDetails] -> IO ()
-  writeRevisionState :: s -> Day -> Revision -> RevisionState -> IO ()
+  writeRevisionState :: s -> Day -> Revision -> CommitState -> IO ()
+
+  writeCommitPackages :: s -> Commit -> [PackageDetails] -> IO ()
+  writeCommitState :: s -> Commit -> CommitState -> IO ()
+  writeCoverage :: s -> Day -> Channel -> Commit -> IO ()
 
 data Database = forall s. Storage s => Database s
 

@@ -25,7 +25,7 @@ data JSON = JSON
   }
 
 data Content = Content
-  { c_revisions :: HashMap Channel (HashMap Commit (Day, RevisionState))
+  { c_revisions :: HashMap Channel (HashMap Commit (Day, CommitState))
   , c_packages :: HashMap Channel (HashMap Package (HashMap Commit (PackageDetails, Day)))
   }
   deriving (Generic)
