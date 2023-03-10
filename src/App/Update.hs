@@ -43,7 +43,7 @@ getOrCreateStateFor State{..} commit =
   case Map.lookup commit commits of
     Just var -> return (commits, (var, False))
     Nothing -> do
-      var <- newTVarIO PreDownload
+      var <- newTVarIO Incomplete
       return (Map.insert commit var commits, (var, True))
 
 setStateFor :: State -> Commit -> CommitState -> IO ()
@@ -64,7 +64,6 @@ process db state commit = do
   when created $ do
     epackages <- Nix.packagesAt commit
     finalState <- save epackages
-    Storage.writeCommitState db commit finalState
     setStateFor state commit finalState
   return var
   where
@@ -73,11 +72,13 @@ process db state commit = do
         timed ("Saved successfully " <> show commit) $ do
           Storage.writeCommitState db commit Incomplete
           Storage.writeCommitPackages db commit packages
+          Storage.writeCommitState db commit Success
           return Success
       Left err -> do
         hPutStrLn stderr $
           "Save failed for " <> show commit <> " : " <> show err
-        return InvalidRevision
+        Storage.writeCommitState db commit Broken
+        return Broken
 
 -- Download package information from Nix and save it to the database
 -- handling at most `concurrency` parallel commits at once.
@@ -185,8 +186,7 @@ tryInSequence (x:xs) = x >>= \case
 
 isFinal :: CommitState -> Bool
 isFinal = \case
-  Success         -> True
-  InvalidRevision -> True
-  PreDownload     -> False
-  Incomplete      -> False
+  Success    -> True
+  Broken     -> True
+  Incomplete -> False
 

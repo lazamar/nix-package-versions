@@ -11,10 +11,9 @@ import Nix (Package, Channel, Revision, PackageDetails)
 -- | Whether all revision entries were added to the table.
 -- Order is important. Success is the max value
 data CommitState
-    = PreDownload        -- ^ We are still to start the download and handling of this state
-    | Incomplete         -- ^ The process of adding packages to the DB was started but not finished
-    | InvalidRevision    -- ^ This revision cannot be built. It is not worth trying again.
-    | Success            -- ^ All revision packages were successfully added to the DB
+    = Incomplete  -- ^ The process of adding packages to the DB was started but not finished
+    | Broken      -- ^ This revision cannot be built. It is not worth trying again
+    | Success     -- ^ All revision packages were successfully added to the DB
     deriving (Show, Eq, Enum, Read, Ord, Generic)
 
 instance ToJSON CommitState
