@@ -8,26 +8,28 @@ module App.Update
 import Control.Concurrent (getNumCapabilities)
 import Control.Concurrent.Async (forConcurrently)
 import Control.Concurrent.MVar (MVar, modifyMVar, readMVar, newMVar)
+import Control.Exception (mask, onException)
 import Control.Monad (void, when)
-import Control.Monad.Extra (concatMapM)
 import Control.Monad.STM (atomically)
 import Control.Concurrent.STM.TVar
   (newTVarIO, readTVar, writeTVar, TVar)
 import Control.Monad.STM.Class (retry)
+import Data.Foldable (traverse_)
 import qualified Data.Map as Map
 import Data.Map (Map)
 import Data.Time.Calendar (Day, showGregorian)
+import Data.Time.Clock (NominalDiffTime, UTCTime(..))
+import Data.Time.Clock.POSIX (POSIXTime, posixDayLength, posixSecondsToUTCTime )
 import System.IO (hPutStrLn, stderr)
 
-import App.Storage (Database, CommitState(..))
+import App.Storage (Database, CommitState(..), Period(..))
 import qualified App.Storage as Storage
 import Control.Concurrent.Extra (stream)
 import Data.Git (Commit(..))
 import GitHub (AuthenticatingUser(..))
 import qualified GitHub
 import Nix
-  ( Revision(..)
-  , Channel(..)
+  ( Channel(..)
   , nixpkgsRepo
   , channelBranch)
 import qualified Nix
@@ -61,18 +63,25 @@ getStateFor State{..} commit = do
 process :: Database -> State -> Commit -> IO (TVar CommitState)
 process db state commit = do
   (var, created) <- getOrCreateStateFor state commit
-  when created $ do
-    epackages <- Nix.packagesAt commit
-    finalState <- save epackages
-    setStateFor state commit finalState
+  when created $
+    (do
+      epackages <- Nix.packagesAt commit
+      finalState <- save epackages
+      setStateFor state commit finalState)
+    `onException` setStateFor state commit Broken
   return var
   where
     save = \case
       Right packages ->
         timed ("Saved successfully " <> show commit) $ do
-          Storage.writeCommitState db commit Incomplete
-          Storage.writeCommitPackages db commit packages
-          Storage.writeCommitState db commit Success
+          let before = Storage.writeCommitState db commit Incomplete
+              succeed = Storage.writeCommitState db commit Success
+              failure = Storage.writeCommitState db commit Broken
+              act = traverse_ (Storage.writePackage db commit) packages
+          mask $ \release -> do
+            before
+            release act `onException` failure
+            succeed
           return Success
       Left err -> do
         hPutStrLn stderr $
@@ -108,42 +117,45 @@ parallelWriter db concurrency f = do
             else return $ cstate == Success
   stream concurrency produce consume
 
+newtype PeriodLength = PeriodLength NominalDiffTime
+
 -- | Download lists of packages and their versions for commits
 -- between 'to' and 'from' dates and save them to the database.
 savePackageVersionsForPeriod
   :: Database
+  -> PeriodLength
   -> AuthenticatingUser
-  -> Day
-  -> Day
+  -> Period
   -> IO [Either String String]
-savePackageVersionsForPeriod database gitUser from to = do
+savePackageVersionsForPeriod database (PeriodLength len) user targetPeriod = do
   let channels = [minBound..]
-  revisions <- concatMapM (Storage.revisions database) channels
+  coverages <- zip channels <$> traverse (Storage.coverage database) channels
   let completed :: Map Commit CommitState
-      completed = foldr add mempty revisions
+      completed = foldr add mempty $ concatMap snd coverages
         where
-        add (_, Revision _ commit, state) acc =
-          Map.insert commit state acc
+        add (_, commit, state) acc = Map.insert commit state acc
 
-      coverage :: Map Day (Map Channel (Commit, CommitState))
-      coverage = foldr add mempty revisions
+      wanted :: [Period]
+      wanted =
+        [ Period from' (from' + len)
+        | from' <- [start, start + len .. to ]
+        ]
         where
-        add (day, Revision channel commit, state) acc =
-          let dayRevision = Map.insert channel (commit, state) mempty in
-          Map.insertWith (<>) day dayRevision acc
+          Period from to = targetPeriod
+          day = ceiling posixDayLength :: Int
+          start = fromIntegral $ day * (ceiling from `div` day)
 
-      missing :: [(Day, Channel)]
-      missing = concatMap f [from..to]
+      missing :: [(Channel, Period)]
+      missing =
+        [ (channel, period)
+        | channel <- channels
+        , Just covered <- [lookup channel coverages]
+        , period <- wanted
+        , not $ any (within period) covered
+        ]
         where
-        f day = case Map.lookup day coverage of
-          Nothing -> (day,) <$> channels
-          Just dayRevisions ->
-            [ (day, channel)
-            | channel <- channels
-            , case Map.lookup channel dayRevisions of
-                Nothing -> True
-                Just (_, state) -> not (isFinal state)
-            ]
+          within (Period s e) (Period s' e',_,state) =
+            s <= s' && e' <= e && state == Success
 
   capabilities <- getNumCapabilities
   -- leave some threads to avoid making the machine unresponsive.
@@ -154,28 +166,41 @@ savePackageVersionsForPeriod database gitUser from to = do
           maybe False isFinal $
           Map.lookup commit completed
 
-        processDay :: Day -> Channel -> IO (Either String String)
-        processDay day channel = do
-          commits <- commitsUntil channel day
+        processPeriod :: Channel -> Period -> IO (Either String String)
+        processPeriod channel period = do
+          commits <- commitsWithin channel period
           let maxAttempts = 10
               pending = take maxAttempts $ filter (not . handled) commits
           success <- tryInSequence $ map save pending
           return $ if success
-            then Right $ unwords ["Success:", show channel, showGregorian day]
-            else Left $ unwords ["Failure:", show channel, showGregorian day]
+            then Right $ unwords ["Success:", show channel, prettyPeriod period]
+            else Left $ unwords ["Failure:", show channel, prettyPeriod period]
 
-    forConcurrently missing (uncurry processDay)
+    forConcurrently missing (uncurry processPeriod)
   where
-  commitsUntil :: Channel -> Day -> IO [Commit]
-  commitsUntil channel day = do
-    r <- GitHub.commitsUntil
-      gitUser 30 nixpkgsRepo (channelBranch channel) day
+  commitsWithin :: Channel -> Period -> IO [Commit]
+  commitsWithin channel (Period _ end) = do
+    let day = toDay end
+    r <- GitHub.commitsUntil user 30 nixpkgsRepo (channelBranch channel) day
     case r of
       Left err -> do
         hPutStrLn stderr $ "Failed to list facts from GitHub: " <> show err
         return []
       Right commits ->
         return commits
+
+toDay :: POSIXTime -> Day
+toDay posix = day
+  where UTCTime day _ = posixSecondsToUTCTime posix
+
+prettyPeriod :: Period -> String
+prettyPeriod (Period from to) = unwords
+  [ "["
+  , showGregorian $ toDay from
+  , "-"
+  , showGregorian $ toDay to
+  , "]"
+  ]
 
 -- stops on first True
 tryInSequence :: [IO Bool] -> IO Bool

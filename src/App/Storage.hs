@@ -20,11 +20,9 @@ data CommitState
 instance ToJSON CommitState
 instance FromJSON CommitState
 
-data Coverage = Coverage Period Revision CommitState
-
 data Period = Period
-  { start :: POSIXTime
-  , end :: POSIXTime
+  { p_start :: POSIXTime
+  , p_end :: POSIXTime
   }
 
 class Storage s where
@@ -36,15 +34,14 @@ class Storage s where
   writePackages :: s -> Day -> Revision -> [PackageDetails] -> IO ()
   writeRevisionState :: s -> Day -> Revision -> CommitState -> IO ()
 
-  writeCommitPackages :: s -> Commit -> [PackageDetails] -> IO ()
-  writeCommitState :: s -> Commit -> CommitState -> IO ()
 
 
-  coverage :: s -> Channel -> IO [Coverage]
+  coverage :: s -> Channel -> IO [(Period, Commit, CommitState)]
   versions' :: s -> Channel -> Package -> IO [(PackageDetails, Commit)]
 
-  writeCoverage :: s -> Coverage -> IO ()
+  writeCoverage :: s -> Period -> Channel -> Commit -> IO ()
   writePackage :: s -> Commit -> PackageDetails -> IO ()
+  writeCommitState :: s -> Commit -> CommitState -> IO ()
 
 data Database = forall s. Storage s => Database s
 
@@ -57,3 +54,26 @@ instance Storage Database where
       writeRevisionState s day revision state
 
 
+-- all package versions for a package from a channel
+--  (SELECT (PKG_COMMIT, NAME, VERSION) from PACKAGES where
+--    NAME = name)
+--  JOIN SELECT * from COVERAGE where
+--    COMMIT = PKG_COMMIT
+--    CHANNEL = channel
+--
+-- all covered periods for a channel
+--    SELECT * from COVERAGE where CHANNEL = channel
+
+-- PACKAGES
+-- (package name, package versions, key_name, full_name, commit)
+-- package info
+-- commit
+
+-- COVERAGE
+-- (channel, commit, period)
+-- channel -> (period, commit)
+-- commit -> [(channel, period)]
+
+-- should only be used during indexing
+-- COMMMIT STATES
+-- (commit, state)
