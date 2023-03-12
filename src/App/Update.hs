@@ -197,6 +197,7 @@ updateDatabase database freq user targetPeriod =
           let !outcome = if success
                 then Right $ unwords ["Success:", show channel,show $ pretty period]
                 else Left $ unwords ["Failure:", show channel, show $ pretty period]
+          logInfo logger $ pretty $ either id id outcome
           modifyMVar_ results (return . (outcome:))
 
     let maxConcurrentRequests = 10
