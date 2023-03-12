@@ -63,6 +63,23 @@ instance Storage SQLiteDatabase where
   writeRevisionState (SQLiteDatabase conn) date revision state =
     runSQL conn $ saveRevision date revision state
 
+  writeCoverage (SQLiteDatabase conn) period channel commit =
+    runSQL conn $ execute
+    ("INSERT OR REPLACE INTO " <> db_COVERAGE <> " VALUES (?,?,?,?,?)")
+    (SQLCoverage commit channel period)
+
+  writePackage (SQLiteDatabase conn) (Commit hash _) details =
+    runSQL conn $ execute
+    ("INSERT OR REPLACE INTO "
+      <> db_PACKAGE_DETAILS
+      <> " VALUES (?,?,?,?,?,?)")
+    (SQLPackageDetails details hash)
+
+  writeCommitState (SQLiteDatabase conn) commit state =
+    runSQL conn $ execute
+    ("INSERT OR REPLACE INTO " <> db_COMMIT_STATES <> " VALUES (?,?,?)")
+    (SQLCommitState commit state)
+
 -- Constants
 
 db_REVISION_NEW , db_PACKAGE_NEW :: IsString a => a
@@ -255,7 +272,6 @@ fromSQLRevision (SQLRevision day revision state) = (day, revision, state)
 
 -------------------------------------------------------------------------------
 -- Write
-
 
 -- | Save the entire database
 saveRevisionWithPackages
