@@ -1,16 +1,17 @@
 {- This module takes care of populating the database
 -}
 
+{-# LANGUAGE BangPatterns #-}
 module App.Update
   ( updateDatabase
   , frequencyDays
   , Frequency
   ) where
 
+import Control.Concurrent.MVar
 import Control.Concurrent (getNumCapabilities, threadDelay)
-import Control.Concurrent.Async (forConcurrently)
 import Control.Exception (mask, onException)
-import Control.Monad (void, when)
+import Control.Monad (void, when, forM_)
 import Control.Monad.STM (atomically)
 import Control.Concurrent.STM.TVar
   (newTVarIO, newTVar, readTVar, writeTVar, TVar)
@@ -142,7 +143,7 @@ updateDatabase
   -> IO [Either String String]
 updateDatabase database freq user targetPeriod =
   withLogger $ \logger -> do
-  let channels = [minBound..]
+  let channels = reverse [minBound..]
   coverages <- zip channels <$> traverse (Storage.coverage database) channels
   let completed :: Map Commit CommitState
       completed = foldr add mempty $ concatMap snd coverages
@@ -176,12 +177,13 @@ updateDatabase database freq user targetPeriod =
   capabilities <- getNumCapabilities
   logInfo logger $ "concurrency: " <> pretty capabilities
   parallelWriter logger database capabilities $ \save -> do
+    results <- newMVar mempty
     let handled :: Commit -> Bool
         handled commit =
           maybe False isFinal $
           Map.lookup commit completed
 
-        processPeriod :: Channel -> Period -> IO (Either String String)
+        processPeriod :: Channel -> Period -> IO ()
         processPeriod channel period = do
           commits <- commitsWithin logger channel period
           let maxAttempts = 10
@@ -192,11 +194,14 @@ updateDatabase database freq user targetPeriod =
                   Storage.writeCoverage database period channel commit
                 return success
           success <- tryInSequence $ map handle pending
-          return $ if success
-            then Right $ unwords ["Success:", show channel,show $ pretty period]
-            else Left $ unwords ["Failure:", show channel, show $ pretty period]
+          let !outcome = if success
+                then Right $ unwords ["Success:", show channel,show $ pretty period]
+                else Left $ unwords ["Failure:", show channel, show $ pretty period]
+          modifyMVar_ results (return . (outcome:))
 
-    forConcurrently missing (uncurry processPeriod)
+    let maxConcurrentRequests = 10
+    stream maxConcurrentRequests (forM_ missing) (uncurry processPeriod)
+    readMVar results
   where
   commitsWithin :: Logger -> Channel -> Period -> IO [Commit]
   commitsWithin logger channel period@(Period _ end) = go 0
