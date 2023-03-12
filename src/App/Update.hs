@@ -20,9 +20,9 @@ import qualified Data.Map as Map
 import Data.Map (Map)
 import Data.Time.Clock (NominalDiffTime)
 import Data.Time.Clock.POSIX (posixDayLength)
-import Prettyprinter (pretty)
-import System.IO (hPutStrLn, stderr)
+import Prettyprinter (Pretty(..), (<+>))
 
+import App.Logger (Logger, withLogger, logInfo, logTimed)
 import App.Storage (Database, CommitState(..))
 import qualified App.Storage as Storage
 import Control.Concurrent.Extra (stream)
@@ -35,7 +35,6 @@ import Nix
   , nixpkgsRepo
   , channelBranch)
 import qualified Nix
-import System.Timed (timed)
 
 data State = State
   { s_commits :: TVar (Map Commit (TVar CommitState))
@@ -66,20 +65,23 @@ getStateFor State{..} commit = do
       Nothing -> retry
       Just var -> return var
 
-process :: Database -> State -> Commit -> IO (TVar CommitState)
-process db state commit = do
+process :: Logger -> Database -> State -> Commit -> IO (TVar CommitState)
+process logger db state commit = do
   (var, created) <- getOrCreateStateFor state commit
   when created $
     (do
-      epackages <- Nix.packagesAt commit
+      logInfo logger $ pretty commit <+> "Nix : loading packages"
+      epackages <- logTimed logger (pretty commit <+> "Nix finished") $
+        Nix.packagesAt commit
       finalState <- save epackages
       setStateFor state commit finalState)
     `onException` setStateFor state commit Broken
   return var
   where
     save = \case
-      Right packages ->
-        timed ("Saved successfully " <> show commit) $ do
+      Right packages -> do
+        logInfo logger $ pretty commit <+> "Writing"
+        logTimed logger (pretty commit <+> "Writing finished" ) $ do
           let before = Storage.writeCommitState db commit Incomplete
               succeed = Storage.writeCommitState db commit Success
               failure = Storage.writeCommitState db commit Broken
@@ -90,8 +92,7 @@ process db state commit = do
             succeed
           return Success
       Left err -> do
-        hPutStrLn stderr $
-          "Save failed for " <> show commit <> " : " <> show err
+        logInfo logger $ pretty commit <+> "Writing failed: " <> pretty (show err)
         Storage.writeCommitState db commit Broken
         return Broken
 
@@ -101,18 +102,19 @@ process db state commit = do
 -- No commit is handled twice. The second time will just point to the
 -- result of the first time it was attempted.
 parallelWriter
-  :: Database
+  :: Logger
+  -> Database
   -> Int
   -- ^ max parallelism
   -> ((Commit -> IO Bool) -> IO a)
     -- ^ save data about a commit to the db
   -> IO a
-parallelWriter db concurrency f = do
+parallelWriter logger db concurrency f = do
   var <- newTVarIO mempty
   let state = State var
       -- run at most `concurrency` of these in parallel.
       -- only blocks if the Commit hasn't been handled before.
-      consume commit = void $ process db state commit
+      consume commit = void $ process logger db state commit
       produce enqueue = f $ \commit -> do
         () <- enqueue commit
         cvar <- getStateFor state commit
@@ -138,7 +140,8 @@ updateDatabase
   -> AuthenticatingUser
   -> Period
   -> IO [Either String String]
-updateDatabase database freq user targetPeriod = do
+updateDatabase database freq user targetPeriod =
+  withLogger $ \logger -> do
   let channels = [minBound..]
   coverages <- zip channels <$> traverse (Storage.coverage database) channels
   let completed :: Map Commit CommitState
@@ -171,9 +174,8 @@ updateDatabase database freq user targetPeriod = do
             s <= s' && e' <= e && state == Success
 
   capabilities <- getNumCapabilities
-  -- leave some threads to avoid making the machine unresponsive.
-  let concurrency = max 1 $ capabilities - 4
-  parallelWriter database concurrency $ \save -> do
+  logInfo logger $ "concurrency: " <> pretty capabilities
+  parallelWriter logger database capabilities $ \save -> do
     let handled :: Commit -> Bool
         handled commit =
           maybe False isFinal $
@@ -181,7 +183,7 @@ updateDatabase database freq user targetPeriod = do
 
         processPeriod :: Channel -> Period -> IO (Either String String)
         processPeriod channel period = do
-          commits <- commitsWithin channel period
+          commits <- commitsWithin logger channel period
           let maxAttempts = 10
               pending = take maxAttempts $ filter (not . handled) commits
               handle commit = do
@@ -196,12 +198,12 @@ updateDatabase database freq user targetPeriod = do
 
     forConcurrently missing (uncurry processPeriod)
   where
-  commitsWithin :: Channel -> Period -> IO [Commit]
-  commitsWithin channel (Period _ end) = do
+  commitsWithin :: Logger -> Channel -> Period -> IO [Commit]
+  commitsWithin logger channel (Period _ end) = do
     r <- GitHub.commitsUntil user 30 nixpkgsRepo (channelBranch channel) end
     case r of
       Left err -> do
-        hPutStrLn stderr $ "Failed to list facts from GitHub: " <> show err
+        logInfo logger $ "GitHub - failed to list commits: " <> pretty (show err)
         return []
       Right commits ->
         return commits

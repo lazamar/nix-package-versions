@@ -41,7 +41,6 @@ import qualified GitHub
 import System.Exit (ExitCode(..))
 import System.Process (readCreateProcessWithExitCode, shell, CreateProcess(..))
 import System.IO.Temp (emptyTempFile, withSystemTempDirectory)
-import System.IO (hPutStrLn, stderr)
 
 -- | The name of the key in the nixpkgs expression that identifies the package.
 newtype KeyName = KeyName { fromKeyName :: Text }
@@ -173,20 +172,12 @@ instance FromJSON RawPackage where
 -- | Download info for a revision and build a list of all packages in it.
 -- This can take a few minutes.
 downloadTo :: FilePath -> Commit -> IO (Maybe String)
-downloadTo filePath commit = do
-  hPutStrLn stderr $ unwords
-    [ "Downloading Nix version for", show commit, "into", filePath ]
-  res <- fmap (either Just (const Nothing))
+downloadTo filePath commit =
+  fmap (either Just (const Nothing))
     $ run
     $ shell
     $ command
     $ filePath
-  case res of
-    Nothing  -> hPutStrLn stderr $ unwords
-      ["Download successful for", show commit, "into", filePath]
-    Just err -> hPutStrLn stderr $ unwords
-      ["Download failed for", show commit, "into", filePath, err]
-  return res
   where
     -- | download package versions as JSON and save
     -- them at destination

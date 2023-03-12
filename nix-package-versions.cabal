@@ -25,13 +25,13 @@ library
       App.Storage.SQLite
       App.Storage.JSON
       App.Update
+      App.Logger
       Control.Monad.SQL
       Control.Concurrent.Extra
       Data.Git
       Data.Time.Period
       GitHub
       Nix
-      System.Timed
   other-modules:
       Paths_nix_package_versions
   hs-source-dirs:
