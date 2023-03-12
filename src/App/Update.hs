@@ -188,8 +188,7 @@ savePackageVersionsForPeriod database (PeriodLength len) user targetPeriod = do
   where
   commitsWithin :: Channel -> Period -> IO [Commit]
   commitsWithin channel (Period _ end) = do
-    let day = toDay end
-    r <- GitHub.commitsUntil user 30 nixpkgsRepo (channelBranch channel) day
+    r <- GitHub.commitsUntil user 30 nixpkgsRepo (channelBranch channel) end
     case r of
       Left err -> do
         hPutStrLn stderr $ "Failed to list facts from GitHub: " <> show err

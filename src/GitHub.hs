@@ -11,7 +11,9 @@ import Control.Monad.Catch (tryJust)
 import Data.ByteString (ByteString)
 import Data.List (partition)
 import Data.Text (unpack, Text)
-import Data.Time.Calendar (Day, showGregorian)
+import Data.Time.Calendar (Day, showGregorian,)
+import Data.Time.Clock (UTCTime(..))
+import Data.Time.Clock.POSIX (POSIXTime, posixSecondsToUTCTime, utcTimeToPOSIXSeconds)
 import qualified Network.HTTP.Req as Req
 import Data.Aeson (FromJSON, parseJSON, withObject, (.:), parseJSON)
 
@@ -28,7 +30,7 @@ data Repository = Repository
   , g_repo :: Text
   }
 
--- | Fetch a list of commits until end of Day
+-- | Fetch a list of commits until given time.
 -- Sorted oldest to newest
 -- Verified commits appear earlier in the list
 commitsUntil
@@ -36,9 +38,9 @@ commitsUntil
   -> Int -- ^ number of commits to retrieve (max 100)
   -> Repository
   -> Branch
-  -> Day
+  -> POSIXTime
   -> IO (Either String [Commit])
-commitsUntil (AuthenticatingUser guser gtoken) count grepo (Branch branch) day = do
+commitsUntil (AuthenticatingUser guser gtoken) count grepo (Branch branch) time = do
   when (count > 100) $ error "trying to retrieve more than max commits"
   response <-
     tryJust isHttpException
@@ -56,7 +58,8 @@ commitsUntil (AuthenticatingUser guser gtoken) count grepo (Branch branch) day =
     rearrange = ((++) <$> fst <*> snd) . partition g_verified . reverse
 
     options = Req.header "User-Agent" guser
-      <> Req.queryParam "until" (Just $ showGregorian day <> "T23:59:59Z")
+        -- TODO: use correct time here.
+      <> Req.queryParam "until" (Just $ showGregorian (toDay time) <> "T23:59:59Z")
       <> Req.queryParam "sha" (Just branch)
       <> Req.queryParam "per_page" (Just count)
       <> Req.basicAuth guser gtoken
@@ -69,6 +72,10 @@ commitsUntil (AuthenticatingUser guser gtoken) count grepo (Branch branch) day =
 
     isHttpException :: Req.HttpException -> Maybe String
     isHttpException = Just . show
+
+toDay :: POSIXTime -> Day
+toDay posix = day
+  where UTCTime day _ = posixSecondsToUTCTime posix
 
 data GitHubCommit = GitHubCommit
   { g_verified :: Bool
@@ -85,8 +92,11 @@ instance FromJSON GitHubCommit where
      construct sha date verified =
          GitHubCommit verified $ Commit (Hash sha) (readGregorian date)
 
-     readGregorian :: String -> Day
-     readGregorian = read . take 10
+     readGregorian :: String -> POSIXTime
+     readGregorian =  fromDay . read . take 10
+
+fromDay :: Day -> POSIXTime
+fromDay day = utcTimeToPOSIXSeconds $ UTCTime day 0
 
 type Url = String
 

@@ -14,6 +14,8 @@ import Data.Maybe (fromMaybe)
 import Data.String (fromString, IsString)
 import Data.Text (pack)
 import Data.Time.Calendar (Day(..))
+import Data.Time.Clock.POSIX (POSIXTime, utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
+import Data.Time.Clock (UTCTime(..))
 import Database.SQLite.Simple (ToRow(toRow), FromRow(fromRow), SQLData(..), NamedParam((:=)))
 import Database.SQLite.Simple.FromField (FromField(..))
 import Database.SQLite.Simple.ToField (ToField(..))
@@ -35,6 +37,13 @@ import qualified App.Storage as Storage
 import qualified Database.SQLite.Simple as SQL
 
 import Control.Monad.SQL (Connection, MonadSQL(..), runSQL, connect)
+
+fromDay :: Day -> POSIXTime
+fromDay day = utcTimeToPOSIXSeconds $ UTCTime day 0
+
+toDay :: POSIXTime -> Day
+toDay posix = day
+  where UTCTime day _ = posixSecondsToUTCTime posix
 
 newtype SQLiteDatabase = SQLiteDatabase Connection
 
@@ -192,12 +201,12 @@ instance FromRow SQLRevision where
         where
             construct :: Hash -> Day -> Channel -> Day -> CommitState -> SQLRevision
             construct hash date channel represents state =
-                SQLRevision represents (Revision channel (Commit hash date)) state
+                SQLRevision represents (Revision channel (Commit hash (fromDay date))) state
 
 instance ToRow SQLRevision where
     toRow (SQLRevision represents (Revision channel (Commit hash date)) state) =
         [ toField hash         -- ^ COMMIT_HASH
-        , toField date         -- ^ COMMIT_DATE
+        , toField (toDay date) -- ^ COMMIT_DATE
         , toField channel      -- ^ CHANNEL
         , toField represents   -- ^ REPRESENTS_DATE
         , toField state        -- ^ STATE
