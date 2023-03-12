@@ -3,9 +3,6 @@
 
 module App.Update
   ( savePackageVersionsForPeriod
-  , PeriodLength(..)
-  , week
-  , prettyPeriod
   ) where
 
 import Control.Concurrent (getNumCapabilities)
@@ -20,15 +17,13 @@ import Control.Monad.STM.Class (retry)
 import Data.Foldable (traverse_)
 import qualified Data.Map as Map
 import Data.Map (Map)
-import Data.Time.Calendar (Day, showGregorian)
-import Data.Time.Clock (NominalDiffTime, UTCTime(..))
-import Data.Time.Clock.POSIX (POSIXTime, posixDayLength, posixSecondsToUTCTime )
 import System.IO (hPutStrLn, stderr)
 
-import App.Storage (Database, CommitState(..), Period(..))
+import App.Storage (Database, CommitState(..))
 import qualified App.Storage as Storage
 import Control.Concurrent.Extra (stream)
 import Data.Git (Commit(..))
+import Data.Time.Period (Period(..), PeriodLength, prettyPeriod)
 import GitHub (AuthenticatingUser(..))
 import qualified GitHub
 import Nix
@@ -120,13 +115,6 @@ parallelWriter db concurrency f = do
             else return $ cstate == Success
   stream concurrency produce consume
 
-week :: PeriodLength
-week = PeriodLength (7 * posixDayLength)
-
-newtype PeriodLength = PeriodLength NominalDiffTime
-  deriving (Show, Eq, Ord)
-  deriving newtype (Num)
-
 -- | Download lists of packages and their versions for commits
 -- between 'to' and 'from' dates and save them to the database.
 savePackageVersionsForPeriod
@@ -135,7 +123,7 @@ savePackageVersionsForPeriod
   -> AuthenticatingUser
   -> Period
   -> IO [Either String String]
-savePackageVersionsForPeriod database (PeriodLength len) user targetPeriod = do
+savePackageVersionsForPeriod database len user targetPeriod = do
   let channels = [minBound..]
   coverages <- zip channels <$> traverse (Storage.coverage database) channels
   let completed :: Map Commit CommitState
@@ -145,13 +133,10 @@ savePackageVersionsForPeriod database (PeriodLength len) user targetPeriod = do
 
       wanted :: [Period]
       wanted =
-        [ Period from' (from' + len)
-        | from' <- [start, start + len .. to ]
+        [ Period from (from + realToFrac len)
+        | from <- [start, start + realToFrac len .. end ]
         ]
-        where
-          Period from to = targetPeriod
-          day = ceiling posixDayLength :: Int
-          start = fromIntegral $ day * (ceiling from `div` day)
+        where Period start end = targetPeriod
 
       missing :: [(Channel, Period)]
       missing =
@@ -195,19 +180,6 @@ savePackageVersionsForPeriod database (PeriodLength len) user targetPeriod = do
         return []
       Right commits ->
         return commits
-
-toDay :: POSIXTime -> Day
-toDay posix = day
-  where UTCTime day _ = posixSecondsToUTCTime posix
-
-prettyPeriod :: Period -> String
-prettyPeriod (Period from to) = unwords
-  [ "["
-  , showGregorian $ toDay from
-  , "-"
-  , showGregorian $ toDay to
-  , "]"
-  ]
 
 -- stops on first True
 tryInSequence :: [IO Bool] -> IO Bool

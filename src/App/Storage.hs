@@ -3,10 +3,10 @@ module App.Storage where
 
 import Data.Aeson (FromJSON, ToJSON)
 import Data.Time.Calendar (Day(..))
-import Data.Time.Clock.POSIX (POSIXTime)
 import GHC.Generics (Generic)
 
 import Data.Git (Hash, Commit)
+import Data.Time.Period (Period)
 import Nix (Package, Channel, Revision, PackageDetails)
 
 -- | Whether all revision entries were added to the table.
@@ -20,11 +20,6 @@ data CommitState
 instance ToJSON CommitState
 instance FromJSON CommitState
 
-data Period = Period
-  { p_start :: POSIXTime
-  , p_end :: POSIXTime
-  }
-
 class Storage s where
   -- read
   versions :: s -> Channel -> Package -> IO [(PackageDetails, Hash, Day)]
@@ -33,8 +28,6 @@ class Storage s where
   -- write
   writePackages :: s -> Day -> Revision -> [PackageDetails] -> IO ()
   writeRevisionState :: s -> Day -> Revision -> CommitState -> IO ()
-
-
 
   versions' :: s -> Channel -> Package -> IO [(PackageDetails, Commit)]
   coverage :: s -> Channel -> IO [(Period, Commit, CommitState)]

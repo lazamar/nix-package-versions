@@ -14,8 +14,6 @@ import Data.Maybe (fromMaybe)
 import Data.String (fromString, IsString)
 import Data.Text (pack)
 import Data.Time.Calendar (Day(..))
-import Data.Time.Clock.POSIX (POSIXTime, utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
-import Data.Time.Clock (UTCTime(..))
 import Database.SQLite.Simple (ToRow(toRow), FromRow(fromRow), SQLData(..), NamedParam((:=)))
 import Database.SQLite.Simple.FromField (FromField(..))
 import Database.SQLite.Simple.ToField (ToField(..))
@@ -31,19 +29,13 @@ import Nix
   , PackageDetails(..))
 
 import Data.Git (Hash(..), Commit(..))
+import Data.Time.Period (toDay, fromDay)
 import App.Storage (Storage, Database(..), CommitState(..))
 import qualified App.Storage as Storage
 
 import qualified Database.SQLite.Simple as SQL
 
 import Control.Monad.SQL (Connection, MonadSQL(..), runSQL, connect)
-
-fromDay :: Day -> POSIXTime
-fromDay day = utcTimeToPOSIXSeconds $ UTCTime day 0
-
-toDay :: POSIXTime -> Day
-toDay posix = day
-  where UTCTime day _ = posixSecondsToUTCTime posix
 
 newtype SQLiteDatabase = SQLiteDatabase Connection
 

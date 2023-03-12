@@ -28,6 +28,7 @@ library
       Control.Monad.SQL
       Control.Concurrent.Extra
       Data.Git
+      Data.Time.Period
       GitHub
       Nix
       System.Timed
