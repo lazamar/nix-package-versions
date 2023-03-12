@@ -2,6 +2,7 @@
 
 module Main (main) where
 
+import qualified Data.ByteString.Char8 as B
 import Data.Foldable (fold)
 import Data.Either (isRight, isLeft)
 import Data.Time.Calendar (Day)
@@ -20,25 +21,28 @@ import System.IO
   , stdout
   , stderr
   , BufferMode(..))
-import Server (Port(..))
-
-import qualified Server as Server
-import qualified Data.ByteString.Char8 as B
+import System.FilePath ((</>))
 
 import Data.Time.Period (Period(..))
 import qualified GitHub
 import qualified App.Storage.SQLite as SQLite
 import App.Update (updateDatabase, frequencyDays, Frequency)
 
+import qualified Server as Server
+
 -- CLI
 data CLIOptions
-  = RunServer Port
+  = RunServer Server.Port DbRoot
   | UpdateVersions
     { cli_downloadFrom :: Day
     , cli_downloadTo   :: Day
     , cli_interval     :: Int
     , cli_user         :: GitHub.AuthenticatingUser
+    , cli_dbRoot       :: DbRoot
     }
+  deriving Show
+
+newtype DbRoot = DbRoot FilePath
   deriving Show
 
 cliOptions :: IO CLIOptions
@@ -61,13 +65,14 @@ cliOptions  = do
 
   server :: Parser CLIOptions
   server = RunServer
-    <$> option (Port <$> auto)
+    <$> option (Server.Port <$> auto)
         (  long "port"
         <> metavar "PORT"
         <> showDefault
-        <> value (Port 8080)
+        <> value (Server.Port 8080)
         <> help "Port to run the server"
         )
+    <*> dbroot
 
   update :: Day -> Parser CLIOptions
   update today = UpdateVersions
@@ -91,12 +96,23 @@ cliOptions  = do
         <> metavar "DAYS"
         )
     <*> gitHubCredentials
+    <*> dbroot
+
+  dbroot :: Parser DbRoot
+  dbroot = DbRoot <$> strOption
+    ( long "db-root"
+    <> help (unwords
+      [ "Directory of database files."
+      , "It is the place where the database will be created in or loaded from."
+      ])
+    <> metavar "PATH"
+    )
 
   gitHubCredentials = pure GitHub.AuthenticatingUser
     <*> (B.pack <$> strOption
         ( long "github-user"
         <> help (unwords
-          [ "GitHub user name to send in requests for commits."
+          [ "GitHub API user name to send in requests for commits."
           , "Without a GitHub login attempts to update the database will"
           , "fail by quickly getting rate limited by Github."
           ])
@@ -112,18 +128,17 @@ main :: IO ()
 main = do
   options <- cliOptions
   case options of
-    RunServer port -> runServer port
-    UpdateVersions from to interval user -> do
+    RunServer port root -> runServer root port
+    UpdateVersions from to interval user root -> do
       let start = utcTimeToPOSIXSeconds $ UTCTime from 0
           end = utcTimeToPOSIXSeconds $ UTCTime to 0
           period = Period start end
-      downloadRevisions user (frequencyDays interval) period
+      downloadRevisions root user (frequencyDays interval) period
   where
-  downloadRevisions :: GitHub.AuthenticatingUser -> Frequency -> Period -> IO ()
-  downloadRevisions user frequency period = do
+  downloadRevisions :: DbRoot -> GitHub.AuthenticatingUser -> Frequency -> Period -> IO ()
+  downloadRevisions root user frequency period = do
     hSetBuffering stdout LineBuffering
-    dbPath <- getConfig
-    SQLite.withDatabase dbPath $ \database -> do
+    SQLite.withDatabase (dbPath root) $ \database -> do
       result <- updateDatabase database frequency user period
       mapM_ (hPutStrLn stderr . show) result
       now <- getCurrentTime
@@ -135,16 +150,9 @@ main = do
           , "Failures:  " <> show (length $ filter isLeft result)
           ]
 
-  runServer port = do
-    dbPath <- getConfig
-    SQLite.withDatabase dbPath $ \database ->
+  runServer root port = do
+    SQLite.withDatabase (dbPath root) $ \database ->
       Server.run database port
 
--------------------------------------------------------------------------------------------
--- Configuration
-
-type Config = FilePath
-
-getConfig :: IO Config
-getConfig  = do
-    return "./saved-versions/SQL_DATABASE.db"
+dbPath :: DbRoot -> FilePath
+dbPath (DbRoot path) = path </> "DATABASE.db"
