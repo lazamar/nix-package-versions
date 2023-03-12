@@ -14,6 +14,7 @@ import Data.Maybe (fromMaybe)
 import Data.String (fromString, IsString)
 import Data.Text (pack)
 import Data.Time.Calendar (Day(..))
+import Data.Time.Clock.POSIX (POSIXTime)
 import Database.SQLite.Simple (ToRow(toRow), FromRow(fromRow), SQLData(..), NamedParam((:=)))
 import Database.SQLite.Simple.FromField (FromField(..))
 import Database.SQLite.Simple.ToField (ToField(..))
@@ -29,7 +30,7 @@ import Nix
   , PackageDetails(..))
 
 import Data.Git (Hash(..), Commit(..))
-import Data.Time.Period (toDay, fromDay)
+import Data.Time.Period (Period(..), toDay, fromDay)
 import App.Storage (Storage, Database(..), CommitState(..))
 import qualified App.Storage as Storage
 
@@ -136,7 +137,87 @@ ensureTablesAreCreated = do
       <> db_PACKAGE_DETAILS
       <> " (NAME COLLATE NOCASE)"
 
+-- | One row from db_COMMIT_STATES
+data SQLCommitState = SQLCommitState Commit CommitState
+  deriving Show
 
+instance FromRow SQLCommitState where
+  fromRow = construct
+    <$> SQL.field  -- COMMIT_HASH
+    <*> SQL.field  -- COMMIT_DATE
+    <*> SQL.field  -- INDEXING_STATE
+    where
+    construct :: Hash -> SQLPOSIX -> CommitState -> SQLCommitState
+    construct hash (SQLPOSIX time) state =
+      SQLCommitState (Commit hash time) state
+
+instance ToRow SQLCommitState where
+  toRow (SQLCommitState (Commit hash time) state) =
+    [ toField hash            -- ^ COMMIT_HASH
+    , toField (SQLPOSIX time) -- ^ COMMIT_DATE
+    , toField state           -- ^ INDEXING_STATE
+    ]
+
+-- | One row from db_COVERAGE
+data SQLCoverage = SQLCoverage Commit Channel Period
+  deriving Show
+
+instance FromRow SQLCoverage where
+  fromRow = pure construct
+    <*> SQL.field -- COMMIT_HASH
+    <*> SQL.field -- COMMIT_DATE
+    <*> SQL.field -- CHANNEL
+    <*> SQL.field -- PERIOD_START
+    <*> SQL.field -- PERIOD_END
+    where
+    construct
+      :: Hash
+      -> SQLPOSIX
+      -> Channel
+      -> SQLPOSIX
+      -> SQLPOSIX
+      -> SQLCoverage
+    construct hash (SQLPOSIX time) channel (SQLPOSIX from) (SQLPOSIX to) =
+      SQLCoverage (Commit hash time) channel (Period from to)
+
+instance ToRow SQLCoverage where
+  toRow (SQLCoverage (Commit hash time) channel (Period from to)) =
+    [ toField hash            -- ^  COMMIT_HASH
+    , toField (SQLPOSIX time) -- ^  COMMIT_DATE
+    , toField channel         -- ^  CHANNEL
+    , toField (SQLPOSIX from) -- ^  PERIOD_START
+    , toField (SQLPOSIX to)   -- ^  PERIOD_END
+    ]
+
+-- | One row from db_COVERAGE
+data SQLPackageDetails = SQLPackageDetails PackageDetails Hash
+  deriving Show
+
+instance ToRow SQLPackageDetails where
+  toRow (SQLPackageDetails details hash) =
+    let (PackageDetails name version keyName fullName description) = details
+    in
+    [ toField name          -- NAME
+    , toField version       -- VERSION
+    , toField keyName       -- KEY_NAME
+    , toField fullName      -- FULL_NAME
+    , nullable description  -- DESCRIPTION
+    , toField hash          -- COMMIT_HASH
+    ]
+
+instance FromRow SQLPackageDetails where
+  fromRow = pure construct
+    <*> SQL.field  -- NAME
+    <*> SQL.field  -- VERSION
+    <*> SQL.field  -- KEY_NAME
+    <*> SQL.field  -- FULL_NAME
+    <*> SQL.field  -- DESCRIPTION
+    <*> SQL.field  -- COMMIT_HASH
+    where
+    construct name version keyName fullName description hash =
+      SQLPackageDetails details hash
+      where
+        details = PackageDetails name version keyName fullName description
 
 -------------------------------------------------------------------------------
 -- Read
@@ -322,6 +403,18 @@ instance ToField Version where
 instance FromField Version where
     fromField = fmap Version . fromField
 
+-- Stores POSIXTime ignoring milliseconds.
+newtype SQLPOSIX = SQLPOSIX POSIXTime
+  deriving Show
+
+instance FromField SQLPOSIX where
+    fromField = fmap construct . fromField
+      where
+      construct :: Int -> SQLPOSIX
+      construct = SQLPOSIX . realToFrac
+
+instance ToField SQLPOSIX where
+    toField (SQLPOSIX n) = SQLInteger $ ceiling n
 nullable :: ToField a => Maybe a -> SQLData
 nullable = fromMaybe SQLNull . fmap toField
 
