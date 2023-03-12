@@ -110,5 +110,22 @@ testDatabase overDatabase = do
       r <- Storage.versions db channel pname
       length r `shouldBe` 2
 
+  it "Returns coverage commits for target channel, but not from other channels" $ do
+    overDatabase $ \db -> do
+      let otherChannel = succ channel
+          commit1 = Commit (Hash "1") time
+          commit2 = Commit (Hash "2") time
+          commit3 = Commit (Hash "3") time
+          period1 = Period (fromIntegral 10) (fromIntegral 20)
+          period2 = Period (fromIntegral 20) (fromIntegral 30)
+          period3 = Period (fromIntegral 30) (fromIntegral 40)
+          writeCoverage channel commit period state = do
+            Storage.writeCommitState db commit state
+            Storage.writeCoverage db period channel commit
 
-
+      writeCoverage channel commit1 period1 Incomplete
+      writeCoverage channel commit2 period2 Broken
+      writeCoverage otherChannel commit3 period3 Success
+      r <- Storage.coverage db channel
+      length r `shouldBe` 2
+      r `shouldBe` [(period1, commit1, Incomplete), (period2, commit2, Broken)]

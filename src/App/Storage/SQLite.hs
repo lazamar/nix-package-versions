@@ -166,7 +166,7 @@ coverage channel = do
           <> db_COMMIT_STATES <> ".COMMIT_HASH"
         , "WHERE"
         , "CHANNEL = :channel"
-        , "ORDER BY COMMIT_DATE"
+        , "ORDER BY " <> db_COVERAGE <> ".COMMIT_DATE"
         ]
     )
     [ ":channel" := channel ]
