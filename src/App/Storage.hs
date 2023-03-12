@@ -36,8 +36,8 @@ class Storage s where
 
 
 
-  coverage :: s -> Channel -> IO [(Period, Commit, CommitState)]
   versions' :: s -> Channel -> Package -> IO [(PackageDetails, Commit)]
+  coverage :: s -> Channel -> IO [(Period, Commit, CommitState)]
 
   writeCoverage :: s -> Period -> Channel -> Commit -> IO ()
   writePackage :: s -> Commit -> PackageDetails -> IO ()

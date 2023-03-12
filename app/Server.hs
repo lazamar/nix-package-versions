@@ -15,7 +15,7 @@ import Data.Maybe (fromMaybe, fromJust)
 import Data.String (fromString, IsString)
 import Data.Text.Encoding (decodeUtf8)
 import Data.Text (Text)
-import Data.Time.Calendar (Day, showGregorian)
+import Data.Time.Calendar (showGregorian)
 import Network.HTTP.Types (status200, status404, renderQuery, queryTextToQuery)
 import Network.Wai (Application, Request, Response, responseLBS, rawPathInfo, queryString)
 import Text.Blaze.Html.Renderer.Utf8 (renderHtml)
@@ -29,7 +29,7 @@ import qualified Text.Blaze.Html5.Attributes as A
 import qualified Data.Text as Text
 import qualified Skylighting as S
 
-import Data.Git (Hash(..), Branch(..))
+import Data.Git (Hash(..), Branch(..), Commit(..))
 import Nix
   ( PackageDetails(..)
   , Channel(..)
@@ -180,8 +180,8 @@ pageHome database request = do
         revisionKey = "revision"
         instructionsAnchor = "instructions"
 
-        getVersions (channel, name) = liftIO $ do
-          versions <- Storage.versions database channel name
+        getVersions (channel, pkg) = liftIO $ do
+          versions <- Storage.versions' database channel pkg
           return (channel, versions)
 
         mSelectedChannel = do
@@ -220,8 +220,8 @@ pageHome database request = do
                        then H.p "No results found"
                        else mapM_ (toRow channel) $ zip [0..] results
 
-        toRow :: Channel -> (Int, (PackageDetails, Hash, Day)) -> H.Html
-        toRow channel (ix, (package, hash, day)) =
+        toRow :: Channel -> (Int, (PackageDetails, Commit)) -> H.Html
+        toRow channel (ix, (package, Commit hash day)) =
             H.tr
                 ! (if odd ix then A.class_ "pure-table-odd" else mempty)
                 $ do
