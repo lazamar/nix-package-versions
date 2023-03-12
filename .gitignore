@@ -1,12 +1,13 @@
 dist-newstyle/
 *~
-saved-versions
 build
+tags
+
+# Credentials
+.secrets
 
 # SQLite Databases
 *.db
-tags
-.env
 
-# Annoying mac files
+# Annoying MacOS files
 .DS_Store
