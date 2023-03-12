@@ -122,17 +122,11 @@ ensureTablesAreCreated = do
       <> ", FOREIGN KEY (CHANNEL, COMMIT_HASH, REPRESENTS_DATE) REFERENCES " <> db_REVISION_NEW <> " (CHANNEL, COMMIT_HASH, REPRESENTS_DATE)"
       <> ")"
 
-    -- This one line caused a 100x speedup in package search
-    execute_ $
-      "CREATE INDEX IF NOT EXISTS NAME_NOCASE_INDEX_2 on "
-      <> db_PACKAGE_NEW
-      <> " (NAME COLLATE NOCASE)"
-
     execute_ $ "CREATE TABLE IF NOT EXISTS " <> db_COMMIT_STATES <> " "
       <> "( COMMIT_HASH       TEXT NOT NULL"
       <> ", COMMIT_DATE       INTEGER NOT NULL"
       <> ", INDEXING_STATE    TEXT NOT NULL"
-      <> ", PRIMARY KEY COMMIT_HASH"
+      <> ", PRIMARY KEY (COMMIT_HASH)"
       <> ")"
 
     execute_ $ "CREATE TABLE IF NOT EXISTS " <> db_COVERAGE <> " "
@@ -141,8 +135,8 @@ ensureTablesAreCreated = do
       <> ", CHANNEL           TEXT NOT NULL"
       <> ", PERIOD_START      INTEGER NOT NULL"
       <> ", PERIOD_END        INTEGER NOT NULL"
-      <> ", PRIMARY KEY (CHANNEL, PERIOD_START, PERIOD_END)"
-      <> ", FOREIGN KEY COMMIT_HASH REFERENCES " <> db_COMMIT_STATES <> " COMMIT_HASH"
+      <> ", PRIMARY KEY (CHANNEL, COMMIT_HASH, PERIOD_START, PERIOD_END)"
+      <> ", FOREIGN KEY (COMMIT_HASH) REFERENCES " <> db_COMMIT_STATES <> " (COMMIT_HASH)"
       <> ")"
 
     execute_ $ "CREATE TABLE IF NOT EXISTS " <> db_PACKAGE_DETAILS <> " "
@@ -153,8 +147,15 @@ ensureTablesAreCreated = do
       <> ", DESCRIPTION       TEXT"
       <> ", COMMIT_HASH       TEXT NOT NULL"
       <> ", PRIMARY KEY (COMMIT_HASH, KEY_NAME)"
-      <> ", FOREIGN KEY COMMIT_HASH REFERENCES " <> db_COMMIT_STATES <> " COMMIT_HASH"
+      <> ", FOREIGN KEY (COMMIT_HASH) REFERENCES " <> db_COMMIT_STATES <> " (COMMIT_HASH)"
       <> ")"
+
+
+    -- This one line caused a 100x speedup in package search
+    execute_ $
+      "CREATE INDEX IF NOT EXISTS NAME_NOCASE_INDEX_2 on "
+      <> db_PACKAGE_NEW
+      <> " (NAME COLLATE NOCASE)"
 
     -- This one line caused a 100x speedup in package search
     execute_ $

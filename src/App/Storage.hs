@@ -29,9 +29,11 @@ class Storage s where
   writePackages :: s -> Day -> Revision -> [PackageDetails] -> IO ()
   writeRevisionState :: s -> Day -> Revision -> CommitState -> IO ()
 
+  -- read
   versions' :: s -> Channel -> Package -> IO [(PackageDetails, Commit)]
   coverage :: s -> Channel -> IO [(Period, Commit, CommitState)]
 
+  -- write
   writeCoverage :: s -> Period -> Channel -> Commit -> IO ()
   writePackage :: s -> Commit -> PackageDetails -> IO ()
   writeCommitState :: s -> Commit -> CommitState -> IO ()

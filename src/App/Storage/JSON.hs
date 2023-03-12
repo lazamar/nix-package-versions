@@ -9,8 +9,9 @@ import Control.Exception (throwIO, finally, ErrorCall(..))
 import qualified Data.Aeson as JSON
 import Data.Aeson (FromJSON, ToJSON)
 import Data.HashMap.Strict (HashMap)
-import qualified Data.HashSet as HashSet
 import qualified Data.HashMap.Strict as HashMap
+import Data.HashSet (HashSet)
+import qualified Data.HashSet as HashSet
 import Data.Maybe (fromMaybe)
 import Data.Time.Calendar (Day)
 import System.Directory (doesFileExist, createDirectoryIfMissing)
@@ -32,7 +33,7 @@ data Content = Content
 
   , c_commits :: HashMap Commit CommitState
   , c_packages' :: HashMap Package (HashMap Commit PackageDetails)
-  , c_coverage :: HashMap Channel (HashMap Period Commit)
+  , c_coverage :: HashMap Channel (HashSet (Period, Commit))
   }
   deriving (Generic)
 
@@ -115,7 +116,8 @@ instance Storage JSON where
         channelCommits =
           HashSet.fromList
           $ filter succeeded
-          $ HashMap.elems
+          $ map snd
+          $ HashSet.toList
           $ HashMap.lookupDefault mempty channel c_coverage
         details = HashMap.toList $ HashMap.lookupDefault mempty pkg c_packages'
         results =
@@ -130,7 +132,7 @@ instance Storage JSON where
     let results =
           [ (period, commit, state)
           | (period, commit) <-
-            HashMap.toList $
+            HashSet.toList $
             HashMap.lookupDefault mempty channel c_coverage
           , Just state <- [HashMap.lookup commit c_commits]
           ]
@@ -138,7 +140,7 @@ instance Storage JSON where
 
   writeCoverage json period channel commit =
     overContents json $ \c@Content{..} ->
-    let entry = HashMap.insert period commit mempty
+    let entry = HashSet.singleton (period, commit)
         new = c { c_coverage = HashMap.insertWith (<>) channel entry c_coverage }
     in (new, ())
 

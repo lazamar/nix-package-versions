@@ -113,8 +113,8 @@ channelBranch = Git.Branch . \case
 
 -- | The contents of a json file with package information
 data Revision = Revision
-    { channel  :: Channel
-    , commit   :: Commit
+    { r_channel  :: Channel
+    , r_commit   :: Commit
     } deriving (Show, Generic, Ord, Eq)
 
 type RevisionPackages = [PackageDetails]
