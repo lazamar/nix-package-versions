@@ -68,32 +68,74 @@ db_REVISION_NEW , db_PACKAGE_NEW :: IsString a => a
 db_REVISION_NEW = "revision"
 db_PACKAGE_NEW = "package"
 
+db_PACKAGE_DETAILS = "package_details"
+db_COVERAGE = "coverage"
+db_COMMIT_STATES = "commit_states"
+
 ensureTablesAreCreated :: MonadSQL m => m ()
 ensureTablesAreCreated = do
     execute_ $ "CREATE TABLE IF NOT EXISTS " <> db_REVISION_NEW <> " "
-                        <> "( COMMIT_HASH       TEXT NOT NULL"
-                        <> ", COMMIT_DATE       TEXT NOT NULL"
-                        <> ", CHANNEL           TEXT NOT NULL"
-                        <> ", REPRESENTS_DATE   TEXT NOT NULL"
-                        <> ", STATE             TEXT NOT NULL"
-                        <> ", PRIMARY KEY (CHANNEL, COMMIT_HASH, REPRESENTS_DATE)"
-                        <> ")"
+      <> "( COMMIT_HASH       TEXT NOT NULL"
+      <> ", COMMIT_DATE       TEXT NOT NULL"
+      <> ", CHANNEL           TEXT NOT NULL"
+      <> ", REPRESENTS_DATE   TEXT NOT NULL"
+      <> ", STATE             TEXT NOT NULL"
+      <> ", PRIMARY KEY (CHANNEL, COMMIT_HASH, REPRESENTS_DATE)"
+      <> ")"
 
     execute_ $ "CREATE TABLE IF NOT EXISTS " <> db_PACKAGE_NEW <> " "
-                        <> "( NAME              TEXT NOT NULL"
-                        <> ", VERSION           TEXT NOT NULL"
-                        <> ", KEY_NAME          TEXT NOT NULL"
-                        <> ", FULL_NAME         TEXT NOT NULL"
-                        <> ", CHANNEL           TEXT NOT NULL"
-                        <> ", COMMIT_HASH       TEXT NOT NULL"
-                        <> ", DESCRIPTION       TEXT"
-                        <> ", REPRESENTS_DATE   TEXT NOT NULL"
-                        <> ", PRIMARY KEY (NAME, VERSION, CHANNEL)"
-                        <> ", FOREIGN KEY (CHANNEL, COMMIT_HASH, REPRESENTS_DATE) REFERENCES " <> db_REVISION_NEW <> " (CHANNEL, COMMIT_HASH, REPRESENTS_DATE)"
-                        <> ")"
+      <> "( NAME              TEXT NOT NULL"
+      <> ", VERSION           TEXT NOT NULL"
+      <> ", KEY_NAME          TEXT NOT NULL"
+      <> ", FULL_NAME         TEXT NOT NULL"
+      <> ", CHANNEL           TEXT NOT NULL"
+      <> ", COMMIT_HASH       TEXT NOT NULL"
+      <> ", DESCRIPTION       TEXT"
+      <> ", REPRESENTS_DATE   TEXT NOT NULL"
+      <> ", PRIMARY KEY (NAME, VERSION, CHANNEL)"
+      <> ", FOREIGN KEY (CHANNEL, COMMIT_HASH, REPRESENTS_DATE) REFERENCES " <> db_REVISION_NEW <> " (CHANNEL, COMMIT_HASH, REPRESENTS_DATE)"
+      <> ")"
 
     -- This one line caused a 100x speedup in package search
-    execute_ $ "CREATE INDEX IF NOT EXISTS NAME_NOCASE_INDEX on " <> db_PACKAGE_NEW <> " (NAME COLLATE NOCASE)"
+    execute_ $
+      "CREATE INDEX IF NOT EXISTS NAME_NOCASE_INDEX_2 on "
+      <> db_PACKAGE_NEW
+      <> " (NAME COLLATE NOCASE)"
+
+    execute_ $ "CREATE TABLE IF NOT EXISTS " <> db_COMMIT_STATES <> " "
+      <> "( COMMIT_HASH       TEXT NOT NULL"
+      <> ", COMMIT_DATE       INTEGER NOT NULL"
+      <> ", INDEXING_STATE    TEXT NOT NULL"
+      <> ", PRIMARY KEY COMMIT_HASH"
+      <> ")"
+
+    execute_ $ "CREATE TABLE IF NOT EXISTS " <> db_COVERAGE <> " "
+      <> "( COMMIT_HASH       TEXT NOT NULL"
+      <> ", COMMIT_DATE       INTEGER NOT NULL" -- we keep the date here for convenience
+      <> ", CHANNEL           TEXT NOT NULL"
+      <> ", PERIOD_START      INTEGER NOT NULL"
+      <> ", PERIOD_END        INTEGER NOT NULL"
+      <> ", PRIMARY KEY (CHANNEL, PERIOD_START, PERIOD_END)"
+      <> ", FOREIGN KEY COMMIT_HASH REFERENCES " <> db_COMMIT_STATES <> " COMMIT_HASH"
+      <> ")"
+
+    execute_ $ "CREATE TABLE IF NOT EXISTS " <> db_PACKAGE_DETAILS <> " "
+      <> "( NAME              TEXT NOT NULL"
+      <> ", VERSION           TEXT NOT NULL"
+      <> ", KEY_NAME          TEXT NOT NULL"
+      <> ", FULL_NAME         TEXT NOT NULL"
+      <> ", DESCRIPTION       TEXT"
+      <> ", COMMIT_HASH       TEXT NOT NULL"
+      <> ", PRIMARY KEY (COMMIT_HASH, KEY_NAME)"
+      <> ", FOREIGN KEY COMMIT_HASH REFERENCES " <> db_COMMIT_STATES <> " COMMIT_HASH"
+      <> ")"
+
+    -- This one line caused a 100x speedup in package search
+    execute_ $
+      "CREATE INDEX IF NOT EXISTS NAME_NOCASE_INDEX on "
+      <> db_PACKAGE_DETAILS
+      <> " (NAME COLLATE NOCASE)"
+
 
 
 -------------------------------------------------------------------------------
