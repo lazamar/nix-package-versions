@@ -5,9 +5,10 @@ module Main (main) where
 import Data.Foldable (fold)
 import Data.Either (isRight, isLeft)
 import Data.List (isPrefixOf)
-import Data.Time.Calendar (Day, showGregorian)
+import Data.Time.Calendar (Day)
 import Data.Time.Clock.System (getSystemTime, systemToUTCTime)
 import Data.Time.Clock (UTCTime(..), getCurrentTime)
+import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Options.Applicative
     (info, option, auto, helper, help, metavar, fullDesc, progDesc
     , header, long, showDefault, value, Parser, execParser, (<**>), command
@@ -26,8 +27,9 @@ import qualified Data.Map as Map
 import qualified Data.ByteString.Char8 as B
 
 import qualified GitHub
+import App.Storage (Period(..))
 import qualified App.Storage.SQLite as SQLite
-import App.Update (savePackageVersionsForPeriod)
+import App.Update (savePackageVersionsForPeriod, week, prettyPeriod, PeriodLength)
 
 -- CLI
 data CLIOptions
@@ -81,25 +83,33 @@ cliOptions  = do
           <> metavar "DATE"
           )
 
+-- | Collect at least one valid commit per channel for each interval.
+defaultInterval :: PeriodLength
+defaultInterval = 5 * week
+
 main :: IO ()
 main = do
   options <- cliOptions
   case options of
     RunServer port -> runServer port
-    UpdateVersions from to -> downloadRevisions from to
+    UpdateVersions from to -> do
+      let start = utcTimeToPOSIXSeconds $ UTCTime from 0
+          end = utcTimeToPOSIXSeconds $ UTCTime to 0
+          period = Period start end
+      downloadRevisions period
   where
-  downloadRevisions :: Day -> Day -> IO ()
-  downloadRevisions from to = do
+  downloadRevisions :: Period -> IO ()
+  downloadRevisions period = do
     hSetBuffering stdout LineBuffering
     (dbPath, user) <- getConfig
     SQLite.withDatabase dbPath $ \database -> do
-      result <- savePackageVersionsForPeriod database user from to
+      result <- savePackageVersionsForPeriod database defaultInterval user period
       mapM_ (hPutStrLn stderr . show) result
       now <- getCurrentTime
       putStrLn $ unlines
           [ ""
           , show now
-          , "Saved package versions from " <> showGregorian from <> " to " <> showGregorian to
+          , "Saved package versions for " <> prettyPeriod period
           , "Successes: " <> show (length $ filter isRight result)
           , "Failures:  " <> show (length $ filter isLeft result)
           ]

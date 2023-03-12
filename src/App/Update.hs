@@ -3,6 +3,9 @@
 
 module App.Update
   ( savePackageVersionsForPeriod
+  , PeriodLength(..)
+  , week
+  , prettyPeriod
   ) where
 
 import Control.Concurrent (getNumCapabilities)
@@ -117,7 +120,12 @@ parallelWriter db concurrency f = do
             else return $ cstate == Success
   stream concurrency produce consume
 
+week :: PeriodLength
+week = PeriodLength (7 * posixDayLength)
+
 newtype PeriodLength = PeriodLength NominalDiffTime
+  deriving (Show, Eq, Ord)
+  deriving newtype (Num)
 
 -- | Download lists of packages and their versions for commits
 -- between 'to' and 'from' dates and save them to the database.
