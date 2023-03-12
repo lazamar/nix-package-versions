@@ -12,7 +12,8 @@ import Data.Time.Clock (UTCTime(..), NominalDiffTime)
 import Data.Time.Clock.POSIX (POSIXTime, posixDayLength, posixSecondsToUTCTime, utcTimeToPOSIXSeconds)
 import Data.Time.Calendar (Day)
 import Data.Time.Format.ISO8601 (iso8601Show)
-import Data.Aeson (FromJSON, ToJSON)
+import Data.Hashable (Hashable)
+import Data.Aeson (FromJSON, ToJSON, FromJSONKey, ToJSONKey)
 import GHC.Generics (Generic)
 
 data Period = Period
@@ -20,7 +21,7 @@ data Period = Period
   , periodEnd :: POSIXTime
   }
   deriving (Show, Eq, Ord, Generic)
-  deriving anyclass (FromJSON, ToJSON)
+  deriving anyclass (FromJSON, ToJSON, FromJSONKey, ToJSONKey, Hashable)
 
 instance Pretty Period where
     pretty (Period from to) = "[" <> p from <> " - " <> p to <> "]"
