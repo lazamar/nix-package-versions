@@ -1,4 +1,4 @@
-FROM haskell:8.6.5
+FROM haskell:9.2.5
 
 RUN apt-get update && apt-get install -y curl bzip2 adduser tmux vim sqlite3
 
@@ -17,4 +17,4 @@ RUN . $HOME/.nix-profile/etc/profile.d/nix.sh && nix-env -i cachix && cachix use
 RUN echo ". $HOME/.nix-profile/etc/profile.d/nix.sh" >> $HOME/.bashrc
 
 # Build project
-RUN cabal v2-build
+RUN cabal update && cabal v2-build
