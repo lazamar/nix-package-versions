@@ -1,15 +1,13 @@
 module Data.Time.Period
     ( Period(..)
-    , PeriodLength
     , toDay
     , fromDay
-    , week
     )
     where
 
 import Prettyprinter
-import Data.Time.Clock (UTCTime(..), NominalDiffTime)
-import Data.Time.Clock.POSIX (POSIXTime, posixDayLength, posixSecondsToUTCTime, utcTimeToPOSIXSeconds)
+import Data.Time.Clock (UTCTime(..))
+import Data.Time.Clock.POSIX (POSIXTime, posixSecondsToUTCTime, utcTimeToPOSIXSeconds)
 import Data.Time.Calendar (Day)
 import Data.Time.Format.ISO8601 (iso8601Show)
 import Data.Hashable (Hashable)
@@ -26,13 +24,6 @@ data Period = Period
 instance Pretty Period where
     pretty (Period from to) = "[" <> p from <> " - " <> p to <> "]"
         where p = pretty .  iso8601Show . posixSecondsToUTCTime
-
-week :: PeriodLength
-week = PeriodLength (7 * posixDayLength)
-
-newtype PeriodLength = PeriodLength NominalDiffTime
-  deriving (Show, Eq, Ord)
-  deriving newtype (Num, Real)
 
 toDay :: POSIXTime -> Day
 toDay posix = day

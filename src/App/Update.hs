@@ -2,7 +2,9 @@
 -}
 
 module App.Update
-  ( savePackageVersionsForPeriod
+  ( updateDatabase
+  , frequencyDays
+  , Frequency
   ) where
 
 import Control.Concurrent (getNumCapabilities)
@@ -17,6 +19,8 @@ import Control.Monad.STM.Class (retry)
 import Data.Foldable (traverse_)
 import qualified Data.Map as Map
 import Data.Map (Map)
+import Data.Time.Clock (NominalDiffTime)
+import Data.Time.Clock.POSIX (posixDayLength)
 import Prettyprinter (pretty)
 import System.IO (hPutStrLn, stderr)
 
@@ -24,7 +28,7 @@ import App.Storage (Database, CommitState(..))
 import qualified App.Storage as Storage
 import Control.Concurrent.Extra (stream)
 import Data.Git (Commit(..))
-import Data.Time.Period (Period(..), PeriodLength)
+import Data.Time.Period (Period(..))
 import GitHub (AuthenticatingUser(..))
 import qualified GitHub
 import Nix
@@ -116,15 +120,22 @@ parallelWriter db concurrency f = do
             else return $ cstate == Success
   stream concurrency produce consume
 
+newtype Frequency = Frequency NominalDiffTime
+  deriving (Show, Eq, Ord)
+  deriving newtype (Num, Real)
+
+frequencyDays :: Int -> Frequency
+frequencyDays n = Frequency $ fromIntegral n * posixDayLength
+
 -- | Download lists of packages and their versions for commits
 -- between 'to' and 'from' dates and save them to the database.
-savePackageVersionsForPeriod
+updateDatabase
   :: Database
-  -> PeriodLength
+  -> Frequency
   -> AuthenticatingUser
   -> Period
   -> IO [Either String String]
-savePackageVersionsForPeriod database len user targetPeriod = do
+updateDatabase database freq user targetPeriod = do
   let channels = [minBound..]
   coverages <- zip channels <$> traverse (Storage.coverage database) channels
   let completed :: Map Commit CommitState
@@ -134,8 +145,8 @@ savePackageVersionsForPeriod database len user targetPeriod = do
 
       wanted :: [Period]
       wanted =
-        [ Period from (from + realToFrac len)
-        | from <- [start, start + realToFrac len .. end ]
+        [ Period from (from + realToFrac freq)
+        | from <- [start, start + realToFrac freq .. end ]
         ]
         where Period start end = targetPeriod
 
@@ -150,8 +161,8 @@ savePackageVersionsForPeriod database len user targetPeriod = do
         , not $ any (within $ expanded period) covered
         ]
         where
-          expanded (Period s e) = Period (s - halfLen) (e + halfLen)
-            where halfLen = realToFrac len / 2
+          expanded (Period s e) = Period (s - halfFreq) (e + halfFreq)
+            where halfFreq = realToFrac freq / 2
 
           within (Period s e) (Period s' e',_,state) =
             s <= s' && e' <= e && state == Success

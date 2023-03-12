@@ -27,10 +27,10 @@ import qualified Server as Server
 import qualified Data.Map as Map
 import qualified Data.ByteString.Char8 as B
 
-import Data.Time.Period (Period(..), week, PeriodLength)
+import Data.Time.Period (Period(..))
 import qualified GitHub
 import qualified App.Storage.SQLite as SQLite
-import App.Update (savePackageVersionsForPeriod)
+import App.Update (updateDatabase, frequencyDays, Frequency)
 
 -- CLI
 data CLIOptions
@@ -38,73 +38,77 @@ data CLIOptions
   | UpdateVersions
     { cli_downloadFrom :: Day
     , cli_downloadTo   :: Day
+    , cli_interval     :: Int
     }
   deriving (Show, Eq)
 
 cliOptions :: IO CLIOptions
 cliOptions  = do
-    today <- utctDay . systemToUTCTime <$> getSystemTime
-    execParser $ info (options today <**> helper) $ fold
-      [ fullDesc
-      , progDesc "Serve information about older Nix package versions or download them"
-      , header "nix-package-versions - a server to search past versions of Nix packages"
-      ]
-    where
-    options :: Day -> Parser CLIOptions
-    options today = subparser $ fold
-      [ command "server" $ info (server <**> helper) $
-          progDesc "Serve information about older Nix package versions"
+  today <- utctDay . systemToUTCTime <$> getSystemTime
+  execParser $ info (options today <**> helper) $ fold
+    [ fullDesc
+    , progDesc "Serve information about older Nix package versions or download them"
+    , header "nix-package-versions - a server to search past versions of Nix packages"
+    ]
+  where
+  options :: Day -> Parser CLIOptions
+  options today = subparser $ fold
+    [ command "server" $ info (server <**> helper) $
+        progDesc "Serve information about older Nix package versions"
 
-      , command "update" $ info (update today <**> helper) $
-          progDesc "Download new package versions from Nix instead of running a server"
-      ]
+    , command "update" $ info (update today <**> helper) $
+        progDesc "Download new package versions from Nix instead of running a server"
+    ]
 
-    server :: Parser CLIOptions
-    server = RunServer
-      <$> option (Port <$> auto)
-          (  long "port"
-          <> metavar "PORT"
-          <> showDefault
-          <> value (Port 8080)
-          <> help "Port to run the server"
-          )
+  server :: Parser CLIOptions
+  server = RunServer
+    <$> option (Port <$> auto)
+        (  long "port"
+        <> metavar "PORT"
+        <> showDefault
+        <> value (Port 8080)
+        <> help "Port to run the server"
+        )
 
-    update :: Day -> Parser CLIOptions
-    update today = UpdateVersions
-      <$> option auto
-          ( long "from"
-          <> help "The date to download data from. YYYY-MM-DD"
-          <> metavar "DATE"
-          )
-      <*> option auto
-          ( long "until"
-          <> help "The date to download data until. YYYY-MM-DD"
-          <> showDefault
-          <> value today
-          <> metavar "DATE"
-          )
-
--- | Collect at least one valid commit per channel for each interval.
-defaultInterval :: PeriodLength
-defaultInterval = 5 * week
+  update :: Day -> Parser CLIOptions
+  update today = UpdateVersions
+    <$> option auto
+        ( long "from"
+        <> help "The date to download data from. YYYY-MM-DD"
+        <> metavar "DATE"
+        )
+    <*> option auto
+        ( long "until"
+        <> help "The date to download data until. YYYY-MM-DD"
+        <> showDefault
+        <> value today
+        <> metavar "DATE"
+        )
+    <*> option auto
+        ( long "frequency"
+        <> help "Collect versions for each DAYS days period between from and until dates"
+        <> showDefault
+        <> value 30
+        <> metavar "DAYS"
+        )
 
 main :: IO ()
 main = do
   options <- cliOptions
   case options of
     RunServer port -> runServer port
-    UpdateVersions from to -> do
+    UpdateVersions from to interval -> do
       let start = utcTimeToPOSIXSeconds $ UTCTime from 0
           end = utcTimeToPOSIXSeconds $ UTCTime to 0
           period = Period start end
-      downloadRevisions period
+      downloadRevisions (frequencyDays interval) period
   where
-  downloadRevisions :: Period -> IO ()
-  downloadRevisions period = do
+  downloadRevisions :: Frequency -> Period -> IO ()
+  downloadRevisions frequency period = do
     hSetBuffering stdout LineBuffering
     (dbPath, user) <- getConfig
     SQLite.withDatabase dbPath $ \database -> do
-      result <- savePackageVersionsForPeriod database defaultInterval user period
+      result <- updateDatabase database frequency user period
       mapM_ (hPutStrLn stderr . show) result
       now <- getCurrentTime
       putStrLn $ unlines

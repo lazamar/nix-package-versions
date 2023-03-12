@@ -182,7 +182,7 @@ pageHome database request = do
         instructionsAnchor = "instructions"
 
         getVersions (channel, pkg) = liftIO $ do
-          versions <- Storage.versions' database channel pkg
+          versions <- Storage.versions database channel pkg
           return (channel, versions)
 
         mSelectedChannel = do
