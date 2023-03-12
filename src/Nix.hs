@@ -38,6 +38,7 @@ import GHC.Generics (Generic)
 import Data.Git (Commit(..), Hash(..))
 import qualified Data.Git as Git
 import qualified GitHub
+import Prettyprinter (Pretty(..))
 import System.Exit (ExitCode(..))
 import System.Process (readCreateProcessWithExitCode, shell, CreateProcess(..))
 import System.IO.Temp (emptyTempFile, withSystemTempDirectory)
@@ -88,6 +89,10 @@ data Channel
     | Nixos_17_03
     deriving (Show, Read, Eq, Bounded, Enum, Ord, Generic)
     deriving anyclass (Hashable, FromJSON, FromJSONKey, ToJSON, ToJSONKey)
+
+instance Pretty Channel where
+  pretty channel = pretty branch
+    where (Git.Branch branch) = channelBranch channel
 
 channelBranch :: Channel -> Git.Branch
 channelBranch = Git.Branch . \case

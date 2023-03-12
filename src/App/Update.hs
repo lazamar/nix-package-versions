@@ -199,11 +199,15 @@ updateDatabase database freq user targetPeriod =
     forConcurrently missing (uncurry processPeriod)
   where
   commitsWithin :: Logger -> Channel -> Period -> IO [Commit]
-  commitsWithin logger channel (Period _ end) = do
+  commitsWithin logger channel period@(Period _ end) = do
     r <- GitHub.commitsUntil user 30 nixpkgsRepo (channelBranch channel) end
     case r of
       Left err -> do
-        logInfo logger $ "GitHub - failed to list commits: " <> pretty (show err)
+        logInfo logger $ "GitHub - failed to list commits for"
+          <+> pretty channel
+          <+> pretty period
+          <> ": "
+          <> pretty (show err)
         return []
       Right commits ->
         return commits
