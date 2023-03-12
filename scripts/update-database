@@ -13,6 +13,7 @@ cabal v2-run nix-package-versions-exe -- \
   --until 2023-02-01 \
   --github-user  $GITHUB_USER \
   --github-token $GITHUB_TOKEN \
-  --db-root database
+  --db-root database \
+  +RTS -N
 
 
