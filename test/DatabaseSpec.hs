@@ -66,49 +66,49 @@ testDatabase overDatabase = do
 
   it "can save and load a revision" $ do
     overDatabase $ \db -> do
-        write db channel commit packages
-        v1 <- Storage.versions' db channel pname
-        length v1 `shouldBe` 1
+      write db channel commit packages
+      v1 <- Storage.versions db channel pname
+      length v1 `shouldBe` 1
 
   -- We can add the same thing over and over again and we won't get duplicates
   it "Adding revisions is idempotent" $ do
     overDatabase $ \db -> do
-        write db channel commit packages
-        v1 <- Storage.versions' db channel pname
+      write db channel commit packages
+      v1 <- Storage.versions db channel pname
 
-        write db channel commit packages
-        v2 <- Storage.versions' db channel pname
+      write db channel commit packages
+      v2 <- Storage.versions db channel pname
 
-        v1 `shouldBe` v2
-        length v1 `shouldBe` 1
+      v1 `shouldBe` v2
+      length v1 `shouldBe` 1
 
   it "Searching a package in a channel doesn't return results from a different channel" $ do
     overDatabase $ \db -> do
-        let otherPkg      = PackageDetails pname (Version "other-version") keyName fullName Nothing
-            otherChannel  = succ channel
-            otherCommit = Commit (Hash "otherHash") time
-            otherRevision = Revision otherChannel otherCommit
-            otherPackages = [otherPkg]
+      let otherPkg      = PackageDetails pname (Version "other-version") keyName fullName Nothing
+          otherChannel  = succ channel
+          otherCommit = Commit (Hash "otherHash") time
+          otherRevision = Revision otherChannel otherCommit
+          otherPackages = [otherPkg]
 
-        write db channel commit packages
-        write db otherChannel otherCommit otherPackages
-        -- Even though the packages have the same name,
-        -- because they point to revisions with different commits
-        -- they only appear in the respective revision search
-        v1 <- Storage.versions' db channel pname
-        v2 <- Storage.versions' db otherChannel pname
-        (fst <$> v1) `shouldBe` [pkg]
-        (fst <$> v2) `shouldBe` [otherPkg]
-        pkg `shouldNotBe` otherPkg
+      write db channel commit packages
+      write db otherChannel otherCommit otherPackages
+      -- Even though the packages have the same name,
+      -- because they point to revisions with different commits
+      -- they only appear in the respective revision search
+      v1 <- Storage.versions db channel pname
+      v2 <- Storage.versions db otherChannel pname
+      (fst <$> v1) `shouldBe` [pkg]
+      (fst <$> v2) `shouldBe` [otherPkg]
+      pkg `shouldNotBe` otherPkg
 
   it "Returns repeated package versions if commits are different" $ do
     overDatabase $ \db -> do
-        let newCommit = Commit (Hash "otherHash") time
+      let newCommit = Commit (Hash "otherHash") time
 
-        write db channel commit packages
-        write db channel newCommit packages
-        r <- Storage.versions' db channel pname
-        length r `shouldBe` 2
+      write db channel commit packages
+      write db channel newCommit packages
+      r <- Storage.versions db channel pname
+      length r `shouldBe` 2
 
 
 

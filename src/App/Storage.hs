@@ -2,12 +2,11 @@
 module App.Storage where
 
 import Data.Aeson (FromJSON, ToJSON)
-import Data.Time.Calendar (Day(..))
 import GHC.Generics (Generic)
 
-import Data.Git (Hash, Commit)
+import Data.Git (Commit)
 import Data.Time.Period (Period)
-import Nix (Package, Channel, Revision, PackageDetails)
+import Nix (Package, Channel, PackageDetails)
 
 -- | Whether all revision entries were added to the table.
 -- Order is important. Success is the max value
@@ -21,65 +20,31 @@ instance ToJSON CommitState
 instance FromJSON CommitState
 
 class Storage s where
-  -- read
-  versions :: s -> Channel -> Package -> IO [(PackageDetails, Hash, Day)]
-  revisions :: s -> Channel -> IO [(Day, Revision, CommitState)]
-
-  -- write
-  writePackages :: s -> Day -> Revision -> [PackageDetails] -> IO ()
-  writeRevisionState :: s -> Day -> Revision -> CommitState -> IO ()
-
-  -- read
-  versions' :: s -> Channel -> Package -> IO [(PackageDetails, Commit)]
+  -- | Retrieve all versions available for a package
+  -- This will be on the order of the tens, or maximum the
+  -- hundreds, so it is fine to just return all of them
+  versions :: s -> Channel -> Package -> IO [(PackageDetails, Commit)]
   coverage :: s -> Channel -> IO [(Period, Commit, CommitState)]
 
-  -- write
   writeCoverage :: s -> Period -> Channel -> Commit -> IO ()
   writePackage :: s -> Commit -> PackageDetails -> IO ()
+
+  -- | When there is a problem building the revision this function allows us
+  -- to record that in the database so that later we don't try to build it again
   writeCommitState :: s -> Commit -> CommitState -> IO ()
 
 data Database = forall s. Storage s => Database s
 
 instance Storage Database where
-    versions (Database s) channel name = versions s channel name
-    revisions (Database s) channel = revisions s channel
-    writePackages (Database s) day revision packages =
-      writePackages s day revision packages
-    writeRevisionState (Database s) day revision state =
-      writeRevisionState s day revision state
-
-    versions' (Database s) channel package =
-      versions' s channel package
-    coverage (Database s) channel =
-      coverage s channel
-    writeCoverage (Database s) period channel commit =
-      writeCoverage s period channel commit
-    writePackage (Database s) commit details =
-      writePackage s commit details
-    writeCommitState (Database s) commit state =
-      writeCommitState s commit state
+  versions (Database s) channel package =
+    versions s channel package
+  coverage (Database s) channel =
+    coverage s channel
+  writeCoverage (Database s) period channel commit =
+    writeCoverage s period channel commit
+  writePackage (Database s) commit details =
+    writePackage s commit details
+  writeCommitState (Database s) commit state =
+    writeCommitState s commit state
 
 
--- all package versions for a package from a channel
---  (SELECT (PKG_COMMIT, NAME, VERSION) from PACKAGES where
---    NAME = name)
---  JOIN SELECT * from COVERAGE where
---    COMMIT = PKG_COMMIT
---    CHANNEL = channel
---
--- all covered periods for a channel
---    SELECT * from COVERAGE where CHANNEL = channel
-
--- PACKAGES
--- (package name, package versions, key_name, full_name, commit)
--- package info
--- commit
-
--- COVERAGE
--- (channel, commit, period)
--- channel -> (period, commit)
--- commit -> [(channel, period)]
-
--- should only be used during indexing
--- COMMMIT STATES
--- (commit, state)
