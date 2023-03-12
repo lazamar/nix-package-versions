@@ -46,6 +46,17 @@ instance Storage Database where
     writeRevisionState (Database s) day revision state =
       writeRevisionState s day revision state
 
+    versions' (Database s) channel package =
+      versions' s channel package
+    coverage (Database s) channel =
+      coverage s channel
+    writeCoverage (Database s) period channel commit =
+      writeCoverage s period channel commit
+    writePackage (Database s) commit details =
+      writePackage s commit details
+    writeCommitState (Database s) commit state =
+      writeCommitState s commit state
+
 
 -- all package versions for a package from a channel
 --  (SELECT (PKG_COMMIT, NAME, VERSION) from PACKAGES where

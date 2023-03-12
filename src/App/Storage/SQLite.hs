@@ -9,6 +9,7 @@ import Control.Monad.Conc.Class (MonadConc)
 import Control.Concurrent.Classy.Async (mapConcurrently)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad (void)
+import Data.List (intercalate)
 import Data.Maybe (listToMaybe)
 import Data.Maybe (fromMaybe)
 import Data.String (fromString, IsString)
@@ -63,6 +64,12 @@ instance Storage SQLiteDatabase where
   writeRevisionState (SQLiteDatabase conn) date revision state =
     runSQL conn $ saveRevision date revision state
 
+  versions' (SQLiteDatabase conn) channel package =
+    runSQL conn $ versions' channel package
+
+  coverage (SQLiteDatabase conn) channel =
+    runSQL conn $ coverage channel
+
   writeCoverage (SQLiteDatabase conn) period channel commit =
     runSQL conn $ execute
     ("INSERT OR REPLACE INTO " <> db_COVERAGE <> " VALUES (?,?,?,?,?)")
@@ -86,6 +93,7 @@ db_REVISION_NEW , db_PACKAGE_NEW :: IsString a => a
 db_REVISION_NEW = "revision"
 db_PACKAGE_NEW = "package"
 
+db_PACKAGE_DETAILS, db_COVERAGE, db_COMMIT_STATES  :: IsString a => a
 db_PACKAGE_DETAILS = "package_details"
 db_COVERAGE = "coverage"
 db_COMMIT_STATES = "commit_states"
@@ -238,6 +246,68 @@ instance FromRow SQLPackageDetails where
 
 -------------------------------------------------------------------------------
 -- Read
+
+versions' :: MonadSQL m => Channel -> Package -> m [(PackageDetails, Commit)]
+versions' channel package = do
+  results <- queryNamed
+    (fromString $ unwords
+        [ "SELECT " <> intercalate ","
+            [ db_PACKAGE_DETAILS <> ".NAME"
+            , db_PACKAGE_DETAILS <> ".VERSION"
+            , db_PACKAGE_DETAILS <> ".KEY_NAME"
+            , db_PACKAGE_DETAILS <> ".FULL_NAME"
+            , db_PACKAGE_DETAILS <> ".DESCRIPTION"
+            , db_PACKAGE_DETAILS <> ".COMMIT_HASH"
+            , db_COVERAGE        <> ".COMMIT_DATE"
+            ]
+        , "FROM " <> db_PACKAGE_DETAILS
+        , "INNER JOIN " <> db_COVERAGE
+          <> " ON "
+          <> db_PACKAGE_DETAILS <> ".COMMIT_HASH"
+          <> " = "
+          <> db_COVERAGE <> ".COMMIT_HASH"
+        , "WHERE"
+        , "NAME = :name COLLATE NOCASE AND CHANNEL = :channel"
+        , "ORDER BY COMMIT_DATE"
+        ]
+    )
+    [ ":name" := package
+    , ":channel" := channel
+    ]
+  return $ parse <$> results
+  where
+  parse (name, version, keyName, fullName, description, hash, (SQLPOSIX time)) =
+    ( PackageDetails name version keyName fullName description
+    , Commit hash time
+    )
+
+coverage :: MonadSQL m => Channel -> m [(Period, Commit, CommitState)]
+coverage channel = do
+  results <- queryNamed
+    (fromString $ unwords
+        [ "SELECT " <> intercalate ","
+            [ db_COVERAGE <> ".COMMIT_HASH"
+            , db_COVERAGE <> ".COMMIT_DATE"
+            , db_COVERAGE <> ".PERIOD_START"
+            , db_COVERAGE <> ".PERIOD_END"
+            , db_COMMIT_STATES <> ".INDEXING_STATE"
+            ]
+        , "FROM " <> db_COVERAGE
+        , "INNER JOIN " <> db_COMMIT_STATES
+          <> " ON "
+          <> db_COVERAGE <> ".COMMIT_HASH"
+          <> " = "
+          <> db_COMMIT_STATES <> ".COMMIT_HASH"
+        , "WHERE"
+        , "CHANNEL = :channel"
+        , "ORDER BY COMMIT_DATE"
+        ]
+    )
+    [ ":channel" := channel ]
+  return $ parse <$> results
+  where
+    parse (hash, SQLPOSIX time, SQLPOSIX start, SQLPOSIX end, state) =
+      (Period start end, Commit hash time, state)
 
 -- | Retrieve all versions available for a package
 -- This will be on the order of the tens, or maximum the
