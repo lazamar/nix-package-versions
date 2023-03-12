@@ -144,9 +144,14 @@ savePackageVersionsForPeriod database len user targetPeriod = do
         | channel <- channels
         , Just covered <- [lookup channel coverages]
         , period <- wanted
-        , not $ any (within period) covered
+        -- we consider an expanded period such that if there is coverage
+        -- withnin this time, then the period can be considered covered.
+        , not $ any (within $ expanded period) covered
         ]
         where
+          expanded (Period s e) = Period (s - halfLen) (e + halfLen)
+            where halfLen = realToFrac len / 2
+
           within (Period s e) (Period s' e',_,state) =
             s <= s' && e' <= e && state == Success
 
