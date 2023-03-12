@@ -184,7 +184,12 @@ updateDatabase database freq user targetPeriod = do
           commits <- commitsWithin channel period
           let maxAttempts = 10
               pending = take maxAttempts $ filter (not . handled) commits
-          success <- tryInSequence $ map save pending
+              handle commit = do
+                success <- save commit
+                when success $
+                  Storage.writeCoverage database period channel commit
+                return success
+          success <- tryInSequence $ map handle pending
           return $ if success
             then Right $ unwords ["Success:", show channel,show $ pretty period]
             else Left $ unwords ["Failure:", show channel, show $ pretty period]
