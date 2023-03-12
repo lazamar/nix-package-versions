@@ -70,6 +70,7 @@ library
     , optparse-applicative
     , parallel
     , parsec
+    , prettyprinter
     , process
     , req
     , skylighting
@@ -120,6 +121,7 @@ executable nix-package-versions-exe
     , optparse-applicative
     , parallel
     , parsec
+    , prettyprinter
     , process
     , req
     , skylighting

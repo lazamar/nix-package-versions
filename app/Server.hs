@@ -30,6 +30,7 @@ import qualified Data.Text as Text
 import qualified Skylighting as S
 
 import Data.Git (Hash(..), Branch(..), Commit(..))
+import Data.Time.Period (toDay)
 import Nix
   ( PackageDetails(..)
   , Channel(..)
@@ -221,7 +222,7 @@ pageHome database request = do
                        else mapM_ (toRow channel) $ zip [0..] results
 
         toRow :: Channel -> (Int, (PackageDetails, Commit)) -> H.Html
-        toRow channel (ix, (package, Commit hash day)) =
+        toRow channel (ix, (package, Commit hash time)) =
             H.tr
                 ! (if odd ix then A.class_ "pure-table-odd" else mempty)
                 $ do
@@ -231,7 +232,7 @@ pageHome database request = do
                     ! A.href (toValue $ revisionLink channel hash package)
                     ! A.title "Click for installation instructions"
                     $ H.text $ fromHash hash
-                H.td $ toMarkup $ showGregorian day
+                H.td $ toMarkup $ showGregorian $ toDay time
 
         revisionLink :: Channel -> Hash -> PackageDetails -> Text.Text
         revisionLink  channel (Hash hash) PackageDetails{name,version,fullName,keyName} =

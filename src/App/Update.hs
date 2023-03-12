@@ -17,13 +17,14 @@ import Control.Monad.STM.Class (retry)
 import Data.Foldable (traverse_)
 import qualified Data.Map as Map
 import Data.Map (Map)
+import Prettyprinter (pretty)
 import System.IO (hPutStrLn, stderr)
 
 import App.Storage (Database, CommitState(..))
 import qualified App.Storage as Storage
 import Control.Concurrent.Extra (stream)
 import Data.Git (Commit(..))
-import Data.Time.Period (Period(..), PeriodLength, prettyPeriod)
+import Data.Time.Period (Period(..), PeriodLength)
 import GitHub (AuthenticatingUser(..))
 import qualified GitHub
 import Nix
@@ -171,8 +172,8 @@ savePackageVersionsForPeriod database len user targetPeriod = do
               pending = take maxAttempts $ filter (not . handled) commits
           success <- tryInSequence $ map save pending
           return $ if success
-            then Right $ unwords ["Success:", show channel, prettyPeriod period]
-            else Left $ unwords ["Failure:", show channel, prettyPeriod period]
+            then Right $ unwords ["Success:", show channel,show $ pretty period]
+            else Left $ unwords ["Failure:", show channel, show $ pretty period]
 
     forConcurrently missing (uncurry processPeriod)
   where

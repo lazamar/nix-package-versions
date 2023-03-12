@@ -27,6 +27,10 @@ data JSON = JSON
 data Content = Content
   { c_revisions :: HashMap Channel (HashMap Commit (Day, CommitState))
   , c_packages :: HashMap Channel (HashMap Package (HashMap Commit (PackageDetails, Day)))
+
+  -- , c_commits :: HashMap Commit CommitState
+  -- , c_packages' :: HashMap Package (HashMap Commit PackageDetails)
+  -- , c_coverage :: HashMap Channel [(Period, Commit)]
   }
   deriving (Generic)
 
@@ -40,7 +44,7 @@ withDatabase path act = do
     if not exists
     then do
       createDirectoryIfMissing True (takeDirectory path)
-      return $ Content mempty mempty
+      return $ Content mempty mempty -- mempty mempty mempty
     else do
       decoded <- JSON.eitherDecodeFileStrict path
       case decoded of

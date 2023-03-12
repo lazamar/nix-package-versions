@@ -14,6 +14,7 @@ import Options.Applicative
     , header, long, showDefault, value, Parser, execParser, (<**>), command
     , subparser
     )
+import Prettyprinter (pretty)
 import System.IO
   ( hSetBuffering
   , hPutStrLn
@@ -26,10 +27,10 @@ import qualified Server as Server
 import qualified Data.Map as Map
 import qualified Data.ByteString.Char8 as B
 
+import Data.Time.Period (Period(..), week, PeriodLength)
 import qualified GitHub
-import App.Storage (Period(..))
 import qualified App.Storage.SQLite as SQLite
-import App.Update (savePackageVersionsForPeriod, week, prettyPeriod, PeriodLength)
+import App.Update (savePackageVersionsForPeriod)
 
 -- CLI
 data CLIOptions
@@ -109,7 +110,7 @@ main = do
       putStrLn $ unlines
           [ ""
           , show now
-          , "Saved package versions for " <> prettyPeriod period
+          , "Saved package versions for " <> show (pretty period)
           , "Successes: " <> show (length $ filter isRight result)
           , "Failures:  " <> show (length $ filter isLeft result)
           ]
