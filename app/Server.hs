@@ -15,7 +15,9 @@ import Data.Maybe (fromMaybe, fromJust)
 import Data.String (fromString, IsString)
 import Data.Text.Encoding (decodeUtf8)
 import Data.Text (Text)
-import Data.Time.Calendar (showGregorian)
+import Data.Time.Calendar (Day, showGregorian)
+import Data.Time.Clock (UTCTime(..))
+import Data.Time.Clock.POSIX (POSIXTime, posixSecondsToUTCTime)
 import Network.HTTP.Types (status200, status404, renderQuery, queryTextToQuery)
 import Network.Wai (Application, Request, Response, responseLBS, rawPathInfo, queryString)
 import Text.Blaze.Html.Renderer.Utf8 (renderHtml)
@@ -30,7 +32,6 @@ import qualified Data.Text as Text
 import qualified Skylighting as S
 
 import Data.Git (Hash(..), Branch(..), Commit(..))
-import Data.Time.Period (toDay)
 import Nix
   ( PackageDetails(..)
   , Channel(..)
@@ -351,5 +352,9 @@ analytics = do
         "function gtag(){dataLayer.push(arguments);}"
         "gtag('js', new Date());                    "
         "gtag('config', 'UA-68439335-6');           "
+
+toDay :: POSIXTime -> Day
+toDay posix = day
+  where UTCTime day _ = posixSecondsToUTCTime posix
 
 

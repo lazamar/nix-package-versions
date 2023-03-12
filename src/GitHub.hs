@@ -1,6 +1,7 @@
 module GitHub
   ( AuthenticatingUser(..)
   , Repository(..)
+  , Failure (..)
   , archiveUrl
   , commitsUntil
   )
@@ -11,12 +12,17 @@ import Control.Monad.Catch (tryJust)
 import Data.ByteString (ByteString)
 import Data.List (partition)
 import Data.Text (unpack, Text)
-import Data.Time.Calendar (Day, showGregorian,)
-import Data.Time.Clock (UTCTime(..))
-import Data.Time.Clock.POSIX (POSIXTime, posixSecondsToUTCTime, utcTimeToPOSIXSeconds)
+import Data.Text.Encoding (decodeUtf8)
+import Data.Time.Calendar (Day)
+import Data.Time.Clock (UTCTime(..), NominalDiffTime)
+import Data.Time.Clock.POSIX (POSIXTime, utcTimeToPOSIXSeconds)
+import qualified Network.HTTP.Client as HTTP
 import qualified Network.HTTP.Req as Req
+import qualified Network.HTTP.Types.Status as HTTP (Status(..))
+import Prettyprinter (Pretty(..))
 import Data.Aeson (FromJSON, parseJSON, withObject, (.:), parseJSON)
 
+import Data.Time.Period (prettyPOSIX)
 import Data.Git (Commit(..), Hash(..), Branch(..))
 
 data AuthenticatingUser = AuthenticatingUser
@@ -30,6 +36,16 @@ data Repository = Repository
   , g_repo :: Text
   }
 
+data Failure
+  = Unknown String
+  | Retry NominalDiffTime
+  | NotFound
+
+instance Pretty Failure where
+  pretty (Unknown str) = "Unknown: " <> pretty str
+  pretty NotFound = "Not Found"
+  pretty (Retry s) = "Retry (" <> pretty (show s) <> ")"
+
 -- | Fetch a list of commits until given time.
 -- Sorted oldest to newest
 -- Verified commits appear earlier in the list
@@ -39,7 +55,7 @@ commitsUntil
   -> Repository
   -> Branch
   -> POSIXTime
-  -> IO (Either String [Commit])
+  -> IO (Either Failure [Commit])
 commitsUntil (AuthenticatingUser guser gtoken) count grepo (Branch branch) time = do
   when (count > 100) $ error "trying to retrieve more than max commits"
   response <-
@@ -59,7 +75,7 @@ commitsUntil (AuthenticatingUser guser gtoken) count grepo (Branch branch) time 
 
     options = Req.header "User-Agent" guser
         -- TODO: use correct time here.
-      <> Req.queryParam "until" (Just $ showGregorian (toDay time) <> "T23:59:59Z")
+      <> Req.queryParam "until" (Just $ show $ prettyPOSIX time)
       <> Req.queryParam "sha" (Just branch)
       <> Req.queryParam "per_page" (Just count)
       <> Req.basicAuth guser gtoken
@@ -70,12 +86,26 @@ commitsUntil (AuthenticatingUser guser gtoken) count grepo (Branch branch) time 
       Req./: g_repo grepo
       Req./: "commits"
 
-    isHttpException :: Req.HttpException -> Maybe String
-    isHttpException = Just . show
+    isHttpException :: Req.HttpException -> Maybe Failure
+    isHttpException = \case
+      Req.JsonHttpException err -> Just $ Unknown err
+      Req.VanillaHttpException e -> case e of
+        HTTP.InvalidUrlException url' err ->
+          Just $ Unknown $ "Invalid URL (" <> show url' <> "): " <> err
+        HTTP.HttpExceptionRequest _request exceptionContent ->
+          case exceptionContent of
+            HTTP.StatusCodeException r bytes
+              | 404 <- HTTP.statusCode $ HTTP.responseStatus r -> Just NotFound
+              | 403 <- HTTP.statusCode $ HTTP.responseStatus r
+              , Just bs <- lookup "Retry-After" (HTTP.responseHeaders r)
+              , n <- read $ unpack $ decodeUtf8 bs ->
+                  Just (Retry $ fromIntegral (n :: Int))
+              | otherwise -> Just $ Unknown $ unwords
+                [ show $ HTTP.responseStatus r
+                , unpack $ decodeUtf8 bytes
+                ]
+            _ -> Just $ Unknown $ show exceptionContent
 
-toDay :: POSIXTime -> Day
-toDay posix = day
-  where UTCTime day _ = posixSecondsToUTCTime posix
 
 data GitHubCommit = GitHubCommit
   { g_verified :: Bool

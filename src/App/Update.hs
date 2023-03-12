@@ -7,7 +7,7 @@ module App.Update
   , Frequency
   ) where
 
-import Control.Concurrent (getNumCapabilities)
+import Control.Concurrent (getNumCapabilities, threadDelay)
 import Control.Concurrent.Async (forConcurrently)
 import Control.Exception (mask, onException)
 import Control.Monad (void, when)
@@ -199,18 +199,31 @@ updateDatabase database freq user targetPeriod =
     forConcurrently missing (uncurry processPeriod)
   where
   commitsWithin :: Logger -> Channel -> Period -> IO [Commit]
-  commitsWithin logger channel period@(Period _ end) = do
-    r <- GitHub.commitsUntil user 30 nixpkgsRepo (channelBranch channel) end
-    case r of
-      Left err -> do
-        logInfo logger $ "GitHub - failed to list commits for"
-          <+> pretty channel
-          <+> pretty period
-          <> ": "
-          <> pretty (show err)
-        return []
-      Right commits ->
-        return commits
+  commitsWithin logger channel period@(Period _ end) = go 0
+    where
+    target = "["<> pretty channel <+> pretty period <> "]"
+    go :: Int -> IO [Commit]
+    go retryN = do
+      when (retryN > 0) $
+        logInfo logger $ "GitHub: retry " <> pretty retryN <+> target
+      r <- GitHub.commitsUntil user 30 nixpkgsRepo (channelBranch channel) end
+      case r of
+        Right commits ->
+          return commits
+
+        Left (GitHub.Retry wait) -> do
+          let seconds = ceiling wait
+              microseconds = 1000 * 1000 * seconds
+          logInfo logger $
+            "GitHub: rate limit exceeded. waiting " <>
+            pretty seconds <> " seconds" <+> target
+          threadDelay microseconds
+          go (retryN + 1)
+
+        Left err -> do
+          logInfo logger $ "GitHub: failed" <+> target <> ": " <> pretty err
+          return []
+
 
 -- stops on first True
 tryInSequence :: [IO Bool] -> IO Bool

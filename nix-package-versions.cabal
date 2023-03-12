@@ -63,6 +63,7 @@ library
     , hashable
     , hspec
     , hspec-expectations
+    , http-client
     , http-types
     , logging-effect
     , monad-control

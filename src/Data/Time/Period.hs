@@ -1,14 +1,11 @@
 module Data.Time.Period
     ( Period(..)
-    , toDay
-    , fromDay
+    , prettyPOSIX
     )
     where
 
 import Prettyprinter
-import Data.Time.Clock (UTCTime(..))
-import Data.Time.Clock.POSIX (POSIXTime, posixSecondsToUTCTime, utcTimeToPOSIXSeconds)
-import Data.Time.Calendar (Day)
+import Data.Time.Clock.POSIX (POSIXTime, posixSecondsToUTCTime)
 import Data.Time.Format.ISO8601 (iso8601Show)
 import Data.Hashable (Hashable)
 import Data.Aeson (FromJSON, ToJSON, FromJSONKey, ToJSONKey)
@@ -22,12 +19,9 @@ data Period = Period
   deriving anyclass (FromJSON, ToJSON, FromJSONKey, ToJSONKey, Hashable)
 
 instance Pretty Period where
-    pretty (Period from to) = "[" <> p from <> " - " <> p to <> "]"
-        where p = pretty .  iso8601Show . posixSecondsToUTCTime
+    pretty (Period from to) =
+        "[" <> prettyPOSIX from <> " - " <> prettyPOSIX to <> "]"
 
-toDay :: POSIXTime -> Day
-toDay posix = day
-  where UTCTime day _ = posixSecondsToUTCTime posix
+prettyPOSIX :: POSIXTime -> Doc ann
+prettyPOSIX = pretty .  iso8601Show . posixSecondsToUTCTime
 
-fromDay :: Day -> POSIXTime
-fromDay day = utcTimeToPOSIXSeconds $ UTCTime day 0
