@@ -9,12 +9,11 @@ module App.Update
 
 import Control.Concurrent (getNumCapabilities)
 import Control.Concurrent.Async (forConcurrently)
-import Control.Concurrent.MVar (MVar, modifyMVar, readMVar, newMVar)
 import Control.Exception (mask, onException)
 import Control.Monad (void, when)
 import Control.Monad.STM (atomically)
 import Control.Concurrent.STM.TVar
-  (newTVarIO, readTVar, writeTVar, TVar)
+  (newTVarIO, newTVar, readTVar, writeTVar, TVar)
 import Control.Monad.STM.Class (retry)
 import Data.Foldable (traverse_)
 import qualified Data.Map as Map
@@ -39,29 +38,33 @@ import qualified Nix
 import System.Timed (timed)
 
 data State = State
-  { s_commits :: MVar (Map Commit (TVar CommitState))
+  { s_commits :: TVar (Map Commit (TVar CommitState))
   }
 
 getOrCreateStateFor :: State -> Commit -> IO (TVar CommitState, Bool)
 getOrCreateStateFor State{..} commit =
-  modifyMVar s_commits $ \commits ->
-  case Map.lookup commit commits of
-    Just var -> return (commits, (var, False))
-    Nothing -> do
-      var <- newTVarIO Incomplete
-      return (Map.insert commit var commits, (var, True))
+  atomically $ do
+    commits <- readTVar s_commits
+    case Map.lookup commit commits of
+      Just var -> return (var, False)
+      Nothing -> do
+        var <- newTVar Incomplete
+        writeTVar s_commits $ Map.insert commit var commits
+        return (var, True)
 
 setStateFor :: State -> Commit -> CommitState -> IO ()
 setStateFor state commit cstate = do
   var <- getStateFor state commit
   atomically $ writeTVar var cstate
 
+-- | Blocks until the state is available
 getStateFor :: State -> Commit -> IO (TVar CommitState)
 getStateFor State{..} commit = do
-  commits <- readMVar s_commits
-  case Map.lookup commit commits of
-    Nothing -> error "getStateFor"
-    Just var -> return var
+  atomically $ do
+    commits <- readTVar s_commits
+    case Map.lookup commit commits of
+      Nothing -> retry
+      Just var -> return var
 
 process :: Database -> State -> Commit -> IO (TVar CommitState)
 process db state commit = do
@@ -105,7 +108,7 @@ parallelWriter
     -- ^ save data about a commit to the db
   -> IO a
 parallelWriter db concurrency f = do
-  var <- newMVar mempty
+  var <- newTVarIO mempty
   let state = State var
       -- run at most `concurrency` of these in parallel.
       -- only blocks if the Commit hasn't been handled before.
