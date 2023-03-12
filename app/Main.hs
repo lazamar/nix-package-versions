@@ -4,7 +4,6 @@ module Main (main) where
 
 import Data.Foldable (fold)
 import Data.Either (isRight, isLeft)
-import Data.List (isPrefixOf)
 import Data.Time.Calendar (Day)
 import Data.Time.Clock.System (getSystemTime, systemToUTCTime)
 import Data.Time.Clock (UTCTime(..), getCurrentTime)
@@ -12,7 +11,7 @@ import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Options.Applicative
     (info, option, auto, helper, help, metavar, fullDesc, progDesc
     , header, long, showDefault, value, Parser, execParser, (<**>), command
-    , subparser
+    , subparser, strOption
     )
 import Prettyprinter (pretty)
 import System.IO
@@ -24,7 +23,6 @@ import System.IO
 import Server (Port(..))
 
 import qualified Server as Server
-import qualified Data.Map as Map
 import qualified Data.ByteString.Char8 as B
 
 import Data.Time.Period (Period(..))
@@ -39,8 +37,9 @@ data CLIOptions
     { cli_downloadFrom :: Day
     , cli_downloadTo   :: Day
     , cli_interval     :: Int
+    , cli_user         :: GitHub.AuthenticatingUser
     }
-  deriving (Show, Eq)
+  deriving Show
 
 cliOptions :: IO CLIOptions
 cliOptions  = do
@@ -91,22 +90,39 @@ cliOptions  = do
         <> value 30
         <> metavar "DAYS"
         )
+    <*> gitHubCredentials
+
+  gitHubCredentials = pure GitHub.AuthenticatingUser
+    <*> (B.pack <$> strOption
+        ( long "github-user"
+        <> help (unwords
+          [ "GitHub user name to send in requests for commits."
+          , "Without a GitHub login attempts to update the database will"
+          , "fail by quickly getting rate limited by Github."
+          ])
+        <> metavar "USER"
+        ))
+    <*> (B.pack <$> strOption
+        ( long "github-token"
+        <> help "GitHub API access token"
+        <> metavar "TOKEN"
+        ))
 
 main :: IO ()
 main = do
   options <- cliOptions
   case options of
     RunServer port -> runServer port
-    UpdateVersions from to interval -> do
+    UpdateVersions from to interval user -> do
       let start = utcTimeToPOSIXSeconds $ UTCTime from 0
           end = utcTimeToPOSIXSeconds $ UTCTime to 0
           period = Period start end
-      downloadRevisions (frequencyDays interval) period
+      downloadRevisions user (frequencyDays interval) period
   where
-  downloadRevisions :: Frequency -> Period -> IO ()
-  downloadRevisions frequency period = do
+  downloadRevisions :: GitHub.AuthenticatingUser -> Frequency -> Period -> IO ()
+  downloadRevisions user frequency period = do
     hSetBuffering stdout LineBuffering
-    (dbPath, user) <- getConfig
+    dbPath <- getConfig
     SQLite.withDatabase dbPath $ \database -> do
       result <- updateDatabase database frequency user period
       mapM_ (hPutStrLn stderr . show) result
@@ -120,27 +136,15 @@ main = do
           ]
 
   runServer port = do
-    (dbPath, _) <- getConfig
+    dbPath <- getConfig
     SQLite.withDatabase dbPath $ \database ->
       Server.run database port
 
 -------------------------------------------------------------------------------------------
 -- Configuration
 
-type Config = (FilePath, GitHub.AuthenticatingUser)
+type Config = FilePath
 
 getConfig :: IO Config
 getConfig  = do
-    !env <- readDotenv ".env"
-    let dbPath = "./saved-versions/SQL_DATABASE.db"
-        user = GitHub.AuthenticatingUser
-          (B.pack $ env Map.! "GIT_USER")
-          (B.pack $ env Map.! "GIT_TOKEN")
-    return (dbPath, user)
-
-readDotenv :: FilePath -> IO (Map.Map String String)
-readDotenv  path = Map.fromList . fmap toEntry . filter isValid . lines <$> readFile path
-    where
-        toEntry = fmap tail . span (/= '=')
-
-        isValid s = not ("#" `isPrefixOf` s) && not (null s)
+    return "./saved-versions/SQL_DATABASE.db"
