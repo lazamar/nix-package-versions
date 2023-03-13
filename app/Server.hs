@@ -10,6 +10,7 @@ import Control.Arrow ((&&&))
 import Control.Monad (join)
 import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Either (fromRight)
+import Data.List (sortOn)
 import Data.Foldable (traverse_)
 import Data.Maybe (fromMaybe, fromJust)
 import qualified Data.Map as Map
@@ -185,7 +186,9 @@ pageHome database request = do
 
         getVersions (channel, pkg) = liftIO $ do
           versions <- Storage.versions database channel pkg
-          return (channel, dedupe versions)
+          return (channel, sortOn (commitDate . snd) $ dedupe versions)
+
+        commitDate (Commit _ time) = time
 
         mSelectedChannel = do
             val <- queryValueFor channelKey
