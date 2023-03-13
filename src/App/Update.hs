@@ -170,8 +170,11 @@ updateDatabase database freq user targetPeriod =
           maybe False isFinal $
           Map.lookup commit completed
 
-        processPeriod :: Channel -> Period -> IO ()
-        processPeriod channel period = do
+        total = length missing
+
+        processPeriod :: (Int, (Channel, Period)) -> IO ()
+        processPeriod (ix, (channel, period)) = do
+          logInfo logger $ "progress: " <> pretty ix <> "/" <> pretty total
           commits <- commitsWithin logger channel period
           let maxAttempts = 10
               pending = take maxAttempts $ filter (not . handled) commits
@@ -200,7 +203,7 @@ updateDatabase database freq user targetPeriod =
           modifyMVar_ results (return . (outcome:))
 
     let maxConcurrentRequests = 10
-    stream maxConcurrentRequests (forM_ missing) (uncurry processPeriod)
+    stream maxConcurrentRequests (forM_ $ zip [0..] missing) processPeriod
     readMVar results
   where
   commitsWithin :: Logger -> Channel -> Period -> IO [Commit]
