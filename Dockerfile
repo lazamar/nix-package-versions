@@ -13,7 +13,6 @@ RUN useradd -rMN -s /bin/bash -g nixbld -G nixbld -u 1001 mainuser
 RUN mkdir -m 0755 /nix && chown root /nix
 RUN curl --insecure -L https://nixos.org/nix/install | sh
 ENV USER=root
-RUN . $HOME/.nix-profile/etc/profile.d/nix.sh && nix-env -i cachix && cachix use cachix
 RUN echo ". $HOME/.nix-profile/etc/profile.d/nix.sh" >> $HOME/.bashrc
 
 # Build project

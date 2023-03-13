@@ -10,7 +10,6 @@ module App.Update
 
 import Control.Concurrent.MVar
 import Control.Concurrent (getNumCapabilities, threadDelay)
-import Control.Exception (mask, onException)
 import Control.Monad (void, when, forM_)
 import Control.Monad.STM (atomically)
 import Control.Concurrent.STM.TVar
@@ -52,11 +51,6 @@ getOrCreateStateFor State{..} commit =
         writeTVar s_commits $ Map.insert commit var commits
         return (var, True)
 
-setStateFor :: State -> Commit -> CommitState -> IO ()
-setStateFor state commit cstate = do
-  var <- getStateFor state commit
-  atomically $ writeTVar var cstate
-
 -- | Blocks until the state is available
 getStateFor :: State -> Commit -> IO (TVar CommitState)
 getStateFor State{..} commit = do
@@ -69,31 +63,24 @@ getStateFor State{..} commit = do
 process :: Logger -> Database -> State -> Commit -> IO (TVar CommitState)
 process logger db state commit = do
   (var, created) <- getOrCreateStateFor state commit
-  when created $
-    (do
-      logInfo logger $ pretty commit <+> "Nix : loading packages"
-      epackages <- logTimed logger (pretty commit <+> "Nix finished") $
-        Nix.packagesAt commit
-      finalState <- save epackages
-      setStateFor state commit finalState)
-    `onException` setStateFor state commit Broken
+  when created $ do
+    logInfo logger $ pretty commit <+> "Nix: loading packages"
+    epackages <- logTimed logger (pretty commit <+> "Nix finished") $
+      Nix.packagesAt commit
+    finalState <- save epackages
+    atomically $ writeTVar var finalState
   return var
   where
     save = \case
       Right packages -> do
         logInfo logger $ pretty commit <+> "Writing"
         logTimed logger (pretty commit <+> "Writing finished" ) $ do
-          let before = Storage.writeCommitState db commit Incomplete
-              succeed = Storage.writeCommitState db commit Success
-              failure = Storage.writeCommitState db commit Broken
-              act = traverse_ (Storage.writePackage db commit) packages
-          mask $ \release -> do
-            before
-            release act `onException` failure
-            succeed
+          Storage.writeCommitState db commit Incomplete
+          traverse_ (Storage.writePackage db commit) packages
+          Storage.writeCommitState db commit Success
           return Success
       Left err -> do
-        logInfo logger $ pretty commit <+> "Writing failed: " <> pretty (show err)
+        logInfo logger $ pretty commit <+> "Nix: failed" <> pretty (show err)
         Storage.writeCommitState db commit Broken
         return Broken
 
@@ -172,7 +159,7 @@ updateDatabase database freq user targetPeriod =
             where halfFreq = realToFrac freq / 2
 
           within (Period s e) (Period s' e',_,state) =
-            s <= s' && e' <= e && state == Success
+            s <= s' && e' <= e && isFinal state
 
   capabilities <- getNumCapabilities
   logInfo logger $ "concurrency: " <> pretty capabilities
@@ -190,13 +177,25 @@ updateDatabase database freq user targetPeriod =
               pending = take maxAttempts $ filter (not . handled) commits
               handle commit = do
                 success <- save commit
-                when success $
-                  Storage.writeCoverage database period channel commit
-                return success
-          success <- tryInSequence $ map handle pending
-          let !outcome = if success
-                then Right $ unwords ["Success:", show channel,show $ pretty period]
-                else Left $ unwords ["Failure:", show channel, show $ pretty period]
+                if success
+                  then do
+                    Storage.writeCoverage database period channel commit
+                    return $ Just commit
+                  else
+                   return Nothing
+          mcommit <- tryInSequence $ map handle pending
+          let !outcome = case mcommit of
+                Just commit ->
+                  Right $ unwords
+                    [ "Success:"
+                    , show channel
+                    , show $ pretty period
+                    , show $ pretty commit]
+                Nothing ->
+                  Left $ unwords
+                    ["Failure:"
+                    , show channel
+                    , show $ pretty period]
           logInfo logger $ pretty $ either id id outcome
           modifyMVar_ results (return . (outcome:))
 
@@ -232,11 +231,11 @@ updateDatabase database freq user targetPeriod =
 
 
 -- stops on first True
-tryInSequence :: [IO Bool] -> IO Bool
-tryInSequence [] = return False
+tryInSequence :: [IO (Maybe a)] -> IO (Maybe a)
+tryInSequence [] = return Nothing
 tryInSequence (x:xs) = x >>= \case
-  True -> return True
-  False -> tryInSequence xs
+  Just v -> return (Just v)
+  Nothing -> tryInSequence xs
 
 isFinal :: CommitState -> Bool
 isFinal = \case
