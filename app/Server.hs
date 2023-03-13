@@ -12,6 +12,7 @@ import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Either (fromRight)
 import Data.Foldable (traverse_)
 import Data.Maybe (fromMaybe, fromJust)
+import qualified Data.Map as Map
 import Data.String (fromString, IsString)
 import Data.Text.Encoding (decodeUtf8)
 import Data.Text (Text)
@@ -184,7 +185,7 @@ pageHome database request = do
 
         getVersions (channel, pkg) = liftIO $ do
           versions <- Storage.versions database channel pkg
-          return (channel, versions)
+          return (channel, dedupe versions)
 
         mSelectedChannel = do
             val <- queryValueFor channelKey
@@ -352,6 +353,17 @@ analytics = do
         "function gtag(){dataLayer.push(arguments);}"
         "gtag('js', new Date());                    "
         "gtag('config', 'UA-68439335-6');           "
+
+dedupe :: [(PackageDetails, Commit)] -> [(PackageDetails, Commit)]
+dedupe xs = Map.elems $ Map.fromListWith newest
+  [ (fullName pkg, (pkg, commit))
+  | (pkg, commit) <- xs
+  ]
+  where
+  newest a@(_, Commit _ t1) b@(_, Commit _ t2) =
+    if t1 > t2
+    then a
+    else b
 
 toDay :: POSIXTime -> Day
 toDay posix = day

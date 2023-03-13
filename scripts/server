@@ -1,0 +1,6 @@
+#!/bin/bash
+
+cabal v2-run nix-package-versions-exe -- \
+  server \
+  --port 8080 \
+  --db-root database

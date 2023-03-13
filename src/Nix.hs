@@ -51,7 +51,7 @@ newtype KeyName = KeyName { fromKeyName :: Text }
 -- | Usually name + version. Used to install a package with "nix-env -i"
 newtype PackageWithVersion = PackageWithVersion { unPackageWithVersion :: Text }
     deriving (Show, Eq, Generic)
-    deriving newtype (Hashable, FromJSON, ToJSON)
+    deriving newtype (Hashable, FromJSON, ToJSON, Ord)
 
 --  | The name of package. e.g. nodejs
 newtype Package = Package { unPackage :: Text }
