@@ -17,4 +17,4 @@ RUN echo ". $HOME/.nix-profile/etc/profile.d/nix.sh" >> $HOME/.bashrc
 
 # Build project
 RUN cabal update
-RUN cabal v2-build
+RUN cabal v2-build -j
