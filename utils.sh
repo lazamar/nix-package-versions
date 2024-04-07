@@ -2,7 +2,7 @@
 set -e
 
 function build {
-  cabal v2-build -j
+  cabal v2-build -j nix-package-versions-exe
 }
 
 function watch-exe {
