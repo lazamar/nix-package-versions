@@ -17,15 +17,15 @@ function watch-test {
   ghcid -c 'cabal v2-repl' nix-package-versions-test
 }
 
+function test {
+  cabal v2-run nix-package-versions-test
+}
+
 function server {
   cabal v2-run nix-package-versions-exe -- \
     server \
     --port 8080 \
     --db-root database
-}
-
-function test {
-  cabal v2-run nix-package-versions-test
 }
 
 function update-database {
