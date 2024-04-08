@@ -1,6 +1,6 @@
 # [Nix Package Versions](https://lazamar.co.uk/nix-versions/)
 
-[![GitHub CI](https://github.com/lazamar/nix-package-versions/workflows/CI/badge.svg)](https://github.com/lazamar/nix-package-versions/actions)
+[![GitHub CI](https://github.com/lazamar/nix-package-versions/workflows/main/badge.svg)](https://github.com/lazamar/nix-package-versions/actions)
 
 This project aims to make it easy to find old versions of packages to install using the [Nix package manager](https://nixos.org/nix/).
 It does that by allowing you to search a package name and finding all past versions of that package that were available in the Nix
