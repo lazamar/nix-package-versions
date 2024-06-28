@@ -68,6 +68,14 @@ newtype Version = Version { unVersion :: Text }
 -- are not worth keeping track of
 data Channel
     = Nixpkgs_unstable
+    | Nixpkgs_24_05_darwin
+    | Nixpkgs_23_11_darwin
+    | Nixpkgs_23_05_darwin
+    | Nixpkgs_22_11_darwin
+    | Nixpkgs_22_05_darwin
+    | Nixpkgs_21_11_darwin
+    | Nixpkgs_21_05_darwin
+    | Nixpkgs_20_09_darwin
     | Nixpkgs_20_03_darwin
     | Nixpkgs_19_09_darwin
     | Nixpkgs_19_03_darwin
@@ -75,6 +83,7 @@ data Channel
     | Nixpkgs_18_03_darwin
     | Nixpkgs_17_09_darwin
     | Nixos_unstable
+    | Nixos_24_05
     | Nixos_23_11
     | Nixos_23_05
     | Nixos_22_11
@@ -99,6 +108,14 @@ instance Pretty Channel where
 channelBranch :: Channel -> Git.Branch
 channelBranch = Git.Branch . \case
     Nixpkgs_unstable     -> "nixpkgs-unstable"
+    Nixpkgs_24_05_darwin -> "nixpkgs-24.05-darwin"
+    Nixpkgs_23_11_darwin -> "nixpkgs-23.11-darwin"
+    Nixpkgs_23_05_darwin -> "nixpkgs-23.05-darwin"
+    Nixpkgs_22_11_darwin -> "nixpkgs-22.11-darwin"
+    Nixpkgs_22_05_darwin -> "nixpkgs-22.05-darwin"
+    Nixpkgs_21_11_darwin -> "nixpkgs-21.11-darwin"
+    Nixpkgs_21_05_darwin -> "nixpkgs-21.05-darwin"
+    Nixpkgs_20_09_darwin -> "nixpkgs-20.09-darwin"
     Nixpkgs_20_03_darwin -> "nixpkgs-20.03-darwin"
     Nixpkgs_19_09_darwin -> "nixpkgs-19.09-darwin"
     Nixpkgs_19_03_darwin -> "nixpkgs-19.03-darwin"
@@ -106,6 +123,7 @@ channelBranch = Git.Branch . \case
     Nixpkgs_18_03_darwin -> "nixpkgs-18.03-darwin"
     Nixpkgs_17_09_darwin -> "nixpkgs-17.09-darwin"
     Nixos_unstable       -> "nixos-unstable"
+    Nixos_24_05          -> "nixos-24.05"
     Nixos_23_11          -> "nixos-23.11"
     Nixos_23_05          -> "nixos-23.05"
     Nixos_22_11          -> "nixos-22.11"
