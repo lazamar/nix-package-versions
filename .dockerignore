@@ -4,3 +4,6 @@ Dockerfile
 .git
 .gitignore
 build-linux.sh
+.idea
+.secrets
+database
