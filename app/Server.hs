@@ -21,7 +21,7 @@ import Data.Time.Calendar (Day, showGregorian)
 import Data.Time.Clock (UTCTime(..))
 import Data.Time.Clock.POSIX (POSIXTime, posixSecondsToUTCTime)
 import Network.HTTP.Types (status200, status404, renderQuery, queryTextToQuery)
-import Network.Wai (Application, Request, Response, responseLBS, rawPathInfo, queryString)
+import Network.Wai (Application, Request, Response, requestHeaders, responseLBS, rawPathInfo, queryString)
 import Text.Blaze.Html.Renderer.Utf8 (renderHtml)
 import Text.Blaze.Html5 ((!))
 import Text.Blaze (toValue, toMarkup)
@@ -66,7 +66,10 @@ pageHome database request = do
     return $ responseLBS status200 [("Content-Type", "text/html")] $ renderHtml $
         H.docTypeHtml do
         H.head do
-            analytics
+            if lookup "DNT" (requestHeaders request) /= Just "1" &&
+               lookup "Sec-GPC" (requestHeaders request) /= Just "1"
+            then analytics
+            else return ()
             H.title "Nix Package Versions"
             H.link
                 ! A.rel "shortcut icon"
