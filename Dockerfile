@@ -2,8 +2,6 @@ FROM haskell:9.2.5
 
 RUN apt-get update && apt-get install -y curl bzip2 adduser tmux vim sqlite3
 
-# Copy project to container
-COPY . /home/app
 WORKDIR /home/app
 
 # Install Nix
@@ -16,5 +14,7 @@ ENV USER=root
 RUN echo ". $HOME/.nix-profile/etc/profile.d/nix.sh" >> $HOME/.bashrc
 
 # Build project
-RUN cabal update
+COPY cabal.project.freeze cabal.project.local nix-package-versions.cabal /home/app/
+RUN cabal update && cabal v2-build --only-dependencies
+COPY . /home/app
 RUN cabal v2-build -j
