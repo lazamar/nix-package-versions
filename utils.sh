@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 
 function build {
@@ -30,10 +30,10 @@ function server {
 
 function update-database {
   # Load GitHub credentials
-  source $(pwd)/.secrets
+  source $(pwd)/.secrets || echo 'warning: no .secrets file' # allow setting env in a different way
 
-  echo $GITHUB_USER
-  echo $GITHUB_TOKEN
+  echo user: $GITHUB_USER
+  echo token: $GITHUB_TOKEN
 
   cabal v2-run nix-package-versions-exe -- \
     update \

@@ -14,3 +14,8 @@ tags
 
 # Annoying MacOS files
 .DS_Store
+
+##########
+# Devenv #
+##########
+/.devenv/
