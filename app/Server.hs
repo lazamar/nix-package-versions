@@ -97,6 +97,11 @@ pageHome database request = do
                 "    align-content: space-between;  "
                 "}                                  "
                 "section { max-width: 1000px; margin: 0 auto auto; padding: 1em }"
+                "div.sourceCode {                   "
+                "    background-color: #EEE;        "
+                "    padding: 1em;                  "
+                "    scrollbar-width: none;         "
+                "}                                  "
                 fromString $ S.styleToCss S.pygments
         H.body $ do
             H.section do
@@ -264,7 +269,9 @@ pageHome database request = do
                 ! A.id instructionsAnchor
                 $ do
                 H.h2 $ toMarkup $ "Install " <> name
-                H.table ! A.class_ "pure-table" $ do
+                H.table
+                    ! A.class_ "pure-table"
+                    ! A.style "margin-bottom: 1em" $ do
                     H.tr do
                         H.th "Package"
                         H.td $ toMarkup name
@@ -278,17 +285,27 @@ pageHome database request = do
                         H.th "Revision"
                         H.td $ toMarkup $ fromHash hash
 
-                H.p $ "Install " <> H.code (toMarkup name) <> " with " <> H.code "nix-env" <> "."
+                H.hr
+
+                H.p $ "Install " <> H.code (toMarkup name) <> " with " <> H.b (H.code "nix-env") <> "."
                 nixCodeBlock $ "nix-env -iA " <> keyName <> " -f " <> revisionURL hash
 
-                H.p $ "Use " <> H.code (toMarkup keyName) <> " in a " <> H.code "nix-shell" <> "."
+                H.hr
+
+                H.p $ "Use " <> H.code (toMarkup keyName) <> " in a " <> H.b (H.code "nix-shell") <> "."
                 nixCodeBlock $ "nix-shell -p " <> keyName <> " -I nixpkgs=" <> revisionURL hash
 
-                H.p $ "Use " <> H.code (toMarkup keyName) <> " with " <> H.code "nix shell" <> "."
+                H.hr
+
+                H.p $ "Use " <> H.code (toMarkup keyName) <> " with " <> H.b (H.code "nix shell") <> "."
                 nixCodeBlock $ "nix shell github:nixos/nixpkgs/" <> fromHash hash <> "#" <> keyName
 
-                H.p $ "Install " <> H.code (toMarkup keyName) <> " with " <> H.code "nix profile" <> "."
+                H.hr
+
+                H.p $ "Install " <> H.code (toMarkup keyName) <> " with " <> H.b (H.code "nix profile") <> "."
                 nixCodeBlock $ "nix profile install nixpkgs/" <> fromHash hash <> "#" <> keyName
+
+                H.hr
 
                 H.p $ "Use " <> H.code (toMarkup name) <> " in a nix script via tarball"
                 nixCodeBlock $ Text.unlines
@@ -301,6 +318,8 @@ pageHome database request = do
                         , "in"
                         , "..."
                         ]
+
+                H.hr
 
                 H.p $ "Use " <> H.code (toMarkup name) <> " in a nix script via Git"
                 nixCodeBlock $ Text.unlines
