@@ -113,27 +113,27 @@ ensureTablesAreCreated = do
     <> db_PACKAGE_DETAILS
     <> " (NAME COLLATE NOCASE)"
 
+  execute_ $
+    "CREATE INDEX IF NOT EXISTS KEY_NAME_NOCASE_INDEX on "
+    <> db_PACKAGE_DETAILS
+    <> " (KEY_NAME COLLATE NOCASE)"
+
 versions :: MonadSQL m => Channel -> Package -> m [(PackageDetails, Commit)]
 versions channel package = do
   results <- queryNamed
     (fromString $ unwords
-        [ "SELECT " <> intercalate ","
-            [ db_PACKAGE_DETAILS <> ".NAME"
-            , db_PACKAGE_DETAILS <> ".VERSION"
-            , db_PACKAGE_DETAILS <> ".KEY_NAME"
-            , db_PACKAGE_DETAILS <> ".FULL_NAME"
-            , db_PACKAGE_DETAILS <> ".DESCRIPTION"
-            , db_PACKAGE_DETAILS <> ".COMMIT_HASH"
-            , db_COVERAGE        <> ".COMMIT_DATE"
+        [ "SELECT DISTINCT " <> intercalate ","
+            [ "P.NAME"
+            , "P.VERSION"
+            , "P.KEY_NAME"
+            , "P.FULL_NAME"
+            , "P.DESCRIPTION"
+            , "P.COMMIT_HASH"
+            , db_COVERAGE <> ".COMMIT_DATE"
             ]
-        , "FROM " <> db_PACKAGE_DETAILS
-        , "INNER JOIN " <> db_COVERAGE
-          <> " ON "
-          <> db_PACKAGE_DETAILS <> ".COMMIT_HASH"
-          <> " = "
-          <> db_COVERAGE <> ".COMMIT_HASH"
-        , "WHERE"
-        , "NAME = :name COLLATE NOCASE AND CHANNEL = :channel"
+        , "FROM (" <> subquery <> ") AS P"
+        , "INNER JOIN " <> db_COVERAGE <> " ON P.COMMIT_HASH = " <> db_COVERAGE <> ".COMMIT_HASH"
+        , "WHERE CHANNEL = :channel"
         , "ORDER BY COMMIT_DATE"
         ]
     )
@@ -146,6 +146,13 @@ versions channel package = do
     ( PackageDetails name version keyName fullName description
     , Commit hash time
     )
+
+  -- NAME = :name OR KEY_NAME = :name
+  subquery = unwords
+    [ "SELECT * FROM " <> db_PACKAGE_DETAILS <> " WHERE NAME = :name COLLATE NOCASE"
+    , "UNION"
+    , "SELECT * FROM " <> db_PACKAGE_DETAILS <> " WHERE KEY_NAME = :name COLLATE NOCASE"
+    ]
 
 coverage :: MonadSQL m => Channel -> m [(Period, Commit, CommitState)]
 coverage channel = do
