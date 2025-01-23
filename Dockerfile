@@ -18,3 +18,9 @@ COPY cabal.project nix-package-versions.cabal /home/app/
 RUN cabal update && cabal v2-build --only-dependencies
 COPY . /home/app
 RUN cabal v2-build -j
+RUN cabal install
+
+# Add executable to PATH as 'nix-package-versions'
+RUN ln -s $(cabal list-bin nix-package-versions-exe) /usr/local/bin/nix-package-versions
+
+ENTRYPOINT ["nix-package-versions"]
