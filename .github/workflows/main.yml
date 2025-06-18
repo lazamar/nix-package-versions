@@ -21,7 +21,11 @@ jobs:
       working-directory: ./
 
     - name: Test
-      run: docker run lazamar/nix-package-versions:latest ./utils.sh test
+      run: |
+        docker run \
+          --entrypoint /home/app/utils.sh \
+          lazamar/nix-package-versions:latest \
+          test
 
     - name: Login to Docker Hub
       uses: docker/login-action@v3
