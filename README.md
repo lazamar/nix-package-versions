@@ -20,3 +20,26 @@ than every 5 weeks there may be versions missing.
 
 During the retrieval of version information, revisions for some periods could not be successfully built for
 some channels and this could also cause versions to be missing from the list.
+
+## Usage
+
+### Creating / Updating the database
+
+The easiest way is to use the docker image. You won't need to have Nix installed in the host machine for that.
+
+```
+$ docker run \
+    -v ./database:/home/app/database \            # Directory where the database is/should be created.
+    -it \
+    --entrypoint /bin/bash \
+    -e GITHUB_USER=$GITHUB_USER \                 # Specify GitHub API access data.
+    -e GITHUB_TOKEN=$GITHUB_TOKEN \
+    lazamar/nix-package-versions \
+
+root@docker$ nix-package-versions \
+    update \
+        --from 2025-01-01 \
+        --github-user $GITHUB_USER \
+        --github-token $GITHUB_TOKEN \
+        --db-root database
+```
