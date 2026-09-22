@@ -230,9 +230,17 @@ downloadTo filePath commit =
         --  Enable recursion into attribute sets that nix-env normally
         --  doesn't look into so that we can get a more complete picture
         --  of the available packages for the purposes of the index.
+        -- Inline `recurseIntoAttrs` instead of relying on it being on
+        -- `super`/`super.lib`. Old revisions (nixos-20.03 and earlier)
+        -- only expose it as `super.recurseIntoAttrs` because
+        -- `lib.recurseIntoAttrs` was added later (lands in 20.09).
+        -- Newer revisions (nixos-25.11+) no longer expose it on
+        -- `super` at all. Setting `recurseForDerivations = true` is
+        -- the underlying mechanism and has been stable across every
+        -- revision we index.
         , "  packageOverrides = super: {"
-        , "    haskellPackages = super.recurseIntoAttrs super.haskellPackages;"
-        , "    rPackages = super.recurseIntoAttrs super.rPackages;"
+        , "    haskellPackages = super.haskellPackages // { recurseForDerivations = true; };"
+        , "    rPackages = super.rPackages // { recurseForDerivations = true; };"
         , "  };"
         , "}"
         ]
