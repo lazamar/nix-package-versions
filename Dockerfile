@@ -1,4 +1,4 @@
-FROM haskell:9.10.1-bullseye
+FROM haskell:9.10.3-bookworm
 
 RUN apt-get update && apt-get install -y curl bzip2 adduser tmux vim sqlite3
 
