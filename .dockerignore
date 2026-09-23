@@ -7,3 +7,5 @@ build-linux.sh
 .idea
 .secrets
 database
+*.db
+*.db-*
