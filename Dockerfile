@@ -12,6 +12,8 @@ RUN mkdir -m 0755 /nix && chown root /nix
 RUN curl --insecure -L https://nixos.org/nix/install | sh
 ENV USER=root
 RUN echo ". $HOME/.nix-profile/etc/profile.d/nix.sh" >> $HOME/.bashrc
+# The updater calls nix-env through /bin/sh, which doesn't read .bashrc.
+ENV PATH=/root/.nix-profile/bin:$PATH
 
 # Build project
 COPY cabal.project nix-package-versions.cabal /home/app/

@@ -26,6 +26,7 @@ some channels and this could also cause versions to be missing from the list.
 ### Creating / Updating the database
 
 The easiest way is to use the docker image. You won't need to have Nix installed in the host machine for that.
+See [UPDATING.md](UPDATING.md) for a step-by-step guide to updating the database.
 
 ```
 $ docker run \
