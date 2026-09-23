@@ -1,4 +1,4 @@
-FROM haskell:9.10.1-bullseye
+FROM haskell:9.10.3-bookworm
 
 RUN apt-get update && apt-get install -y curl bzip2 adduser tmux vim sqlite3
 
@@ -21,6 +21,6 @@ RUN cabal v2-build -j
 RUN cabal install
 
 # Add executable to PATH as 'nix-package-versions'
-RUN ln -s $(cabal list-bin nix-package-versions-exe) /usr/local/bin/nix-package-versions
+RUN BIN=$(cabal list-bin exe:nix-package-versions) && ln -s "$BIN" /usr/local/bin/nix-package-versions
 
 ENTRYPOINT ["nix-package-versions"]
