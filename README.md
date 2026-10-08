@@ -29,12 +29,12 @@ The easiest way is to use the docker image. You won't need to have Nix installed
 
 ```
 $ docker run \
-    -v ./database:/home/app/database \            # Directory where the database is/should be created.
+    -v ./database:/home/app/database \
     -it \
     --entrypoint /bin/bash \
-    -e GITHUB_USER=$GITHUB_USER \                 # Specify GitHub API access data.
+    -e GITHUB_USER=$GITHUB_USER \
     -e GITHUB_TOKEN=$GITHUB_TOKEN \
-    lazamar/nix-package-versions \
+    lazamar/nix-package-versions
 
 root@docker$ nix-package-versions \
     update \
