@@ -128,8 +128,10 @@ updateDatabase
   -> AuthenticatingUser
   -> Period
   -> IO [Either String String]
-updateDatabase database freq user targetPeriod =
-  withLogger $ \logger -> do
+updateDatabase database freq user (Period start end)
+  | freq <= 0 = pure [Left "Frequency must be greater than zero"]
+  | end < start = pure [Left "Until date must not precede from date"]
+  | otherwise = withLogger $ \logger -> do
   let channels = reverse [minBound..]
   coverages <- zip channels <$> traverse (Storage.coverage database) channels
   let completed :: Map Commit CommitState
@@ -142,7 +144,6 @@ updateDatabase database freq user targetPeriod =
         [ Period from (from + realToFrac freq)
         | from <- [start, start + realToFrac freq .. end ]
         ]
-        where Period start end = targetPeriod
 
       missing :: [(Channel, Period)]
       missing =
